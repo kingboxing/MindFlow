@@ -1,20 +1,20 @@
 # SOLFLO - Solve Operator of Linearised Flow
 
-for linear analyses for flow dynamics (currently based on Finite Element)
+Finite Element Linear Analyser and Solver for Flow Dynamics using Linearized Governing Equations
 
 ======================================================
 
 Frequency anaysis (require FEniCS package)
 
-	Global SVD (Resolvent) solver
-	Eigen solver
-	Frequency response
+	Global SVD solver (Resolvent analysis)
+	Eigen solver (Linear Stability analysis)
+	Frequency response (Input-output analysis)
 	
 TimeDomain anaysis (require FEniCS package)
 
-	Newton solvers for stationary flows and time stepping flows
+	Nonlinear Newton solvers for stationary flows and time stepping flows
 	IPCS (incremental pressure correction scheme) solvers for time stepping flows
 	
 Control design
 
-	H2-norm control design (require Py-mess package)
+	H2-norm optimal control design (require Py-mess package)
