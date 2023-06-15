@@ -5,7 +5,7 @@ Linear Analyser for Multi-Physics Flows (currently based on Finite Element)
 
 Frequency anaysis (require FEniCS package)
 
-	Global SVD solver
+	Global SVD (Resolvent) solver
 	Eigen solver
 	Frequency response
 	
