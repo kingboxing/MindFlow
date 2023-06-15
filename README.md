@@ -1,2 +1,5 @@
-# LinCS
-Linear Analyser for Multi-Physics Flows (currently based on Finite Element)
+# SOLFLO - Solve Operator of Linearised Flow
+
+for linear analyses for flow dynamics (currently based on Finite Element)
+
+======================================================
