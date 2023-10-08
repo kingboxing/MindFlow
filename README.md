@@ -1,6 +1,6 @@
-# SOLFLO - Solve Operator of Linearised Flow
+# MindFlow
 
-Finite Element Linear Analyser and Solver for Flow Dynamics using Linearized Governing Equations
+Resolvent Analysis and Optimal Control Design for Fluid Flows based on Finite Element Method (FEniCS)
 
 ======================================================
 
