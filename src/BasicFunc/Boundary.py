@@ -15,7 +15,8 @@ defining and marking boundaries
 
 
 class SetBoundary(SubDomain):
-    """A subclass of SubDomain for defining and marking a boundary
+    """
+    A subclass of SubDomain for defining and marking a boundary
 
     Parameters
     -------------------
@@ -39,27 +40,29 @@ class SetBoundary(SubDomain):
 
     """
 
-    def __init__(self, mesh=None, mark=0):
+    def __init__(self, mesh, mark_all=0):
         SubDomain.__init__(self) # initialize base class
-        if mesh is None:
-            print('Error : Mesh Needed')
-        else:
-            self.mesh = mesh
-            self.boundaries = MeshFunction('size_t', mesh, mesh.topology().dim() - 1)#FacetFunction("size_t", self.mesh)
-            self.boundaries.set_all(mark) # mark the whole domain as 0
-            self.submesh=BoundaryMesh(mesh, 'exterior')
-            self.subboundaries=MeshFunction('size_t', self.submesh, self.submesh.topology().dim())
-            self.subboundaries.set_all(mark)
+        self.mark_all=mark_all
+        self.mesh = mesh
+        self.boundaries = MeshFunction('size_t', mesh, mesh.topology().dim() - 1)#FacetFunction("size_t", self.mesh); using int to mark boundaries
+        self.boundaries.set_all(self.mark_all) # mark all facets as 0 
+                
+        # unused functionality
+        self.submesh=BoundaryMesh(mesh, 'exterior') # boundary mesh with outward pointing normals 
+        self.subboundaries=MeshFunction('size_t', self.submesh, self.submesh.topology().dim())
+        self.subboundaries.set_all(self.mark_all)
 
     def inside(self, x, on_boundary):
-        """Function that returns True for points that belong to the boundary
-            and False for points that don't belong to the boundary.
+        """
+        Function that returns True for points that belong to the boundary
+        and False for points that don't belong to the boundary.
         """
         tol = self.tol
         return eval(self.option)
 
-    def set_boundary(self, location=None, mark=None, tol=1e-4):
-        """Function to define and mark the boundary
+    def set_boundary(self, location, mark, tol=1e-10):
+        """
+        Function to define and mark the boundary
 
         Parameters
         ------------------
@@ -75,8 +78,8 @@ class SetBoundary(SubDomain):
         """
 
         self.tol = tol
-        if location is None or mark is None:
-            print('Error : Please Indentify the Loacation or Mark of the Boundary')
+        if mark == self.mark_all:
+            info('Warning : The Mark Number of the Boundary is the Same as the Mesh Facets')
         else:
             self.option = location
             self.mark(self.boundaries, mark)
@@ -86,10 +89,13 @@ class SetBoundary(SubDomain):
                 self.option = location.replace(' and on_boundary','')
             else:
                 pass
+            
+            # unused functionality
             self.mark(self.subboundaries, mark)
 
     def get_measure(self):
-        """Get the measure object of the domain
+        """
+        Get the measure object of the domain
 
         Returns
         --------------------
@@ -97,30 +103,33 @@ class SetBoundary(SubDomain):
         """
         ds = Measure('ds', domain=self.mesh, subdomain_data=self.boundaries)
         return ds
-        
-    def get_submeasure(self):
-        ds = Measure('ds', domain=self.submesh, subdomain_data=self.subboundaries)
-        return ds
 
     def get_domain(self):
-        """Get the FacetFunction on given mesh
+        """
+        Get the FacetFunction on given mesh
 
         Returns
         ---------------------
         boundaries : FacetFunction with marked boundaries on given mesh
         """
         return self.boundaries
+    
+    # unused functionality
+    def get_submeasure(self):
+        ds = Measure('ds', domain=self.submesh, subdomain_data=self.subboundaries)
+        return ds
         
     def get_subdomain(self):
         return self.subboundaries
     
-    
-"""This module provides classes for setting up boundary conditions
+#%%
+"""
+This module provides classes for setting up boundary conditions
 """
 
-
 class SetBoundaryCondition:
-    """A class to set up the Dirichlet boundary condition
+    """
+    A class to set up the Dirichlet boundary condition
 
     Parameters
     -------------------
@@ -150,63 +159,60 @@ class SetBoundaryCondition:
     >>> boundarycondition = {'FunctionSpace': 'V.sub(0).sub(0)', 'Value': Constant(0.0)}
     >>> boundary=SetBoundary(mesh)
     >>> boundary.set_boundary(location = boundarylocations, mark = 1)
-    >>> bc = SetBoundaryCondition(Functionspace=V, boundary=boundary)
+    >>> bc = SetBoundaryCondition(functionspace=V, boundary=boundary)
     >>> bc.set_boundarycondition(boundarycondition, 1)
 
     """
-    def __init__(self, Functionspace=None, boundary=None):
-        self.functionspace = Functionspace
+    def __init__(self, element, boundary):
+        self.functionspace = element.functionspace # 
         self.boundaries = boundary.get_domain() # Get the FacetFunction on given mesh
         self.bcs = []
+        
         self.v = TestFunction(self.functionspace)
         self.u = TrialFunction(self.functionspace)
         self.func = Function(self.functionspace)
         
-    def set_boundarycondition(self, boucon, mark):
-        """Set a boundary condition using FEniCS function DirichletBC as
+    def set_boundarycondition(self, bc_dict, mark):
+        """
+        Set a boundary condition using FEniCS function DirichletBC as
             DirichletBC(self.functionspace.sub(0).sub(0), self.boundaries, mark)
 
         Parameters
         ------------------------
-        boucon: dict
-            At least two elements : 'FunctionSpace' and 'Value', which respectively
+        bc_dict: dict
+            At least two keys : 'FunctionSpace' and 'Value', which respectively
             indicate the location and the value of the boundary condition
 
         mark: int
             ID of the boundary
 
         """
-        ## test content in boucon
-        try:
-            test = boucon['FunctionSpace']
-        except:
-            boucon['FunctionSpace']=None
-            info('No Dirichlet Boundary Condition at Boundary % g' % mark)
-        else:
-            pass
-        
-        try:
-            test = boucon['Value']
-        except:
-            boucon['Value']=None
-            info('No Dirichlet Boundary Condition at Boundary % g' % mark)
-        else:
-            pass
-        
-        if boucon['FunctionSpace'] is not None and boucon['Value'] is not None:
-            index = boucon['FunctionSpace'].find('.') # find the index of the first dot
-            if boucon['FunctionSpace'][index] == '.':
-                bc = 'DirichletBC(self.functionspace' + boucon['FunctionSpace'][index:] \
-                    + ',' + "boucon['Value']" + ',' + 'self.boundaries' + ',' + 'mark, method="geometric")'
+        if 'Value' not in bc_dict:
+            if 'FunctionSpace' not in bc_dict:
+                info('Please specify the FunctionSpace and Value of the Dirichlet Boundary Condition Applied at Boundary % g' % mark)
             else:
-                bc= 'DirichletBC(self.functionspace' +  ',' + "boucon['Value']" + ',' \
-                    + 'self.boundaries' + ',' + 'mark, method="geometric")'
-            self.bcs.append(eval(bc)) # boundary condition added to the list bcs
+                info('Please specify the Value of the Dirichlet Boundary Condition Applied at Boundary % g' % mark)
+        elif bc_dict['Value'] in ['Free Outlet','FreeOutlet','freeoutlet','free outlet']:
+            info('Free outlet boundary condition applied at Boundary % g' % mark)
+        elif 'FunctionSpace' not in bc_dict:
+            info('Please specify the FunctionSpace of the Dirichlet Boundary Condition Applied at Boundary % g' % mark)
+        elif bc_dict['FunctionSpace'] is not None and bc_dict['Value'] is not None:
+                index = bc_dict['FunctionSpace'].find('.') # find the index of the first dot
+                if bc_dict['FunctionSpace'][index] == '.': # if bc_dict applied to a subspace
+                    bc = 'DirichletBC(self.functionspace' + bc_dict['FunctionSpace'][index:] \
+                        + ',' + "bc_dict['Value']" + ',' + 'self.boundaries' + ',' + 'mark, method="geometric")' 
+                else: # bc_dict applied to functionspace
+                    bc= 'DirichletBC(self.functionspace' +  ',' + "bc_dict['Value']" + ',' \
+                        + 'self.boundaries' + ',' + 'mark, method="geometric")'
+                self.bcs.append(eval(bc)) # boundary condition added to the list bcs
         else:
             info('No Dirichlet Boundary Condition at Boundary % g' % mark)
+
+        # deal with 'FreeOutlet' BC
     
-    def MatrixBC_rhs(self):
-        """Matrix that contains only zeros in the rows which have Dirichlet boundary conditions
+    def MatrixBC_rhs(self): # try with assemble module
+        """
+        Matrix that contains only zeros in the rows which have Dirichlet boundary conditions
         """
         I = assemble(Constant(0.0)*dot(self.u, self.v) * dx)
         I.ident_zeros()
@@ -216,13 +222,15 @@ class SetBoundaryCondition:
         return Mat
     
     def VectorBC_rhs(self): 
-        """Vector that contains boundary condition values in the rows which have Dirichlet boundary conditions
+        """
+        Vector that contains boundary condition values in the rows which have Dirichlet boundary conditions
         """        
         Vec_bc = assemble(Constant(0.0)*dot(self.func, self.v) * dx)
         [bc.apply(Vec_bc) for bc in self.bcs]
         return Vec_bc
-        
-class TestBoundaryCondition:
+    
+#%%
+class BoundaryConditionFormat:
     """
     boundary conditions of cases for testing
     """
@@ -267,8 +275,8 @@ class TestBoundaryCondition:
     def __cylinder_74k_sym_60ds_40us(self,bc_type):
         return eval('self.__cylinder_'+bc_type+'()')
 
-
-class TestBoundary:
+#%%
+class BoundaryFormat:
     """
     boundaries of meshes for testing
     """

@@ -18,4 +18,4 @@ import time
 # MindFlow pkgs
 from src.BasicFunc.ElementFunc import TaylorHood
 from src.BasicFunc.Boundary import SetBoundary, SetBoundaryCondition
-from src.SteadySolver.NewtonSolver import NS_Newton_Solver
+from src.NSolver.Steady.SteadyNewtonSolver import NewtonSolver

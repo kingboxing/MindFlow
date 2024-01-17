@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Tue Oct 17 20:50:47 2023
+Created on Tue Oct 17 21:47:22 2023
 
 @author: bojin
 """
-
 from context import *
 
 print('------------ Testing base flow function ------------')
@@ -26,24 +25,21 @@ BoundaryConditions = {'Top'   : {'FunctionSpace': 'V.sub(0).sub(1)',   'Value': 
                     'Outlet'  : {'Value': 'FreeOutlet'}
                     }
 
-# define boundaries and mark them with integers
-boundary=SetBoundary(mesh)
-for key in BoundaryLocations.keys():
-     boundary.set_boundary(location=BoundaryLocations[key]['Location'], mark=BoundaryLocations[key]['Mark'])
-
 # initialise solver
-solver = NS_Newton_Solver(mesh=mesh, boundary=boundary,order=(2,1))
+solver = NewtonSolver(mesh=mesh, order=(2,1))
 # set solver parameters
-solver.solver_parameters(parameters={'newton_solver':{'linear_solver': 'mumps','absolute_tolerance': 1e-12, 'relative_tolerance': 1e-12}})
+solver.parameters({'newton_solver':{'linear_solver': 'mumps','absolute_tolerance': 1e-12, 'relative_tolerance': 1e-12}})
+# mark boundary
+for key in BoundaryLocations.keys():
+     solver.set_boundary(location=BoundaryLocations[key]['Location'], mark=BoundaryLocations[key]['Mark'])
 # set boundary conditions
 for key in BoundaryConditions.keys():
     solver.set_boundarycondition(BoundaryConditions[key], BoundaryLocations[key]['Mark'])
 
 # solve for Re=80
 Re=80
-nu = Constant(1.0 / Re)
 # solve the problem
-solver.solve(nu=nu)
+solver.solve(Re)
 
 # compare results
 datapath='./data/baseflow/bf_newton_cylinder_26k_re080'
@@ -55,7 +51,7 @@ norm2=np.linalg.norm((element.w.vector()-solver.w.vector()).get_local(), ord=np.
 elapsed_time = time.time() - start_time
 # print results
 print('Results are printed as follows : ')
-print('Re = %d     Error_2norm = %e     drag = %e    lift = %e' % (Re, norm2, solver.get_force(bodymark=5,direction=0) , solver.get_force(bodymark=5,direction=1)))
+print('Re = %d     Error_2norm = %e     drag = %e    lift = %e' % (Re, norm2, solver.force(bodymark=5,direction=0) , solver.force(bodymark=5,direction=1)))
 
 print('Elapsed Time = %e' % (elapsed_time))
 print('------------ Testing completed ------------')
