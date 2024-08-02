@@ -11,11 +11,11 @@ import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 # python pkgs
-from dolfin import *
+from src.Deps import *
 import numpy as np
 import time
 
 # MindFlow pkgs
 from src.BasicFunc.ElementFunc import TaylorHood
 from src.BasicFunc.Boundary import SetBoundary, SetBoundaryCondition
-from src.NSolver.Steady.SteadyNewtonSolver import NewtonSolver
+from src.NSolver.SteadySolver import NewtonSolver

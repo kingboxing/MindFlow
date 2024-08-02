@@ -6,17 +6,20 @@ Created on Wed Oct 18 15:10:37 2023
 @author: bojin
 """
 
-from dolfin import *
+from src.Deps import *
+
+from src.NSolver.SolverBase import NSolverBase
 
 from src.BasicFunc.ElementFunc import TaylorHood
 from src.BasicFunc.Boundary import SetBoundary, SetBoundaryCondition
+from src.BasicFunc.InitialCondition import SetInitialCondition
 from src.Eqns.NavierStokes import Incompressible
 
 """
 This module provides the classes that solve Navier-Stokes equations
 """
 
-class NewtonSolver:
+class NewtonSolver(NSolverBase):
     """
     Solver of steady Navier-Stokes equations using Newton method
 
@@ -55,19 +58,14 @@ class NewtonSolver:
         None.
 
         """
-        self.element = TaylorHood(mesh = mesh, order = order, dim = dim, constrained_domain = constrained_domain) # initialise finite element space
-        # store solution
-        self.w=self.element.w
-        # boundary
-        self.boundary=SetBoundary(mesh)
-        self.set_boundary=self.boundary.set_boundary
+        # init solver
+        element = TaylorHood(mesh = mesh, order = order, dim = dim, constrained_domain = constrained_domain) # initialise finite element space
+        NSolverBase.__init__(self, mesh, element, Re, sourceterm, bodyforce)
+       
         # boundary condition
-        self.BCs = SetBoundaryCondition(self.element, self.boundary)
+        self.BCs = SetBoundaryCondition(self.element.functionspace, self.boundary)
         self.set_boundarycondition=self.BCs.set_boundarycondition
-        # NS equations
-        self.eqn=Incompressible(self.element, self.boundary, Re, sourceterm=sourceterm, bodyforce=bodyforce)
-        # parameters
-        self.param={}
+
 
     def __SNSEqn(self):
         """
@@ -79,7 +77,7 @@ class NewtonSolver:
 
         """
         # form Steady Incompressible Navier-Stokes Equations
-        self.NS=self.eqn.SteadyNonlinear()
+        self.SNS=self.eqn.SteadyNonlinear()
         # force act on the body
         self.force_exp=self.eqn.force_init() 
 
@@ -91,12 +89,12 @@ class NewtonSolver:
         -------
         None.
         """
-        J = derivative(self.NS, self.element.w, self.element.tw) # Jacobian matrix
-        problem = NonlinearVariationalProblem(self.NS, self.element.w, self.BCs.bcs, J) # Nonlinear problem
+        J = derivative(self.SNS, self.element.w, self.element.tw) # Jacobian matrix
+        problem = NonlinearVariationalProblem(self.SNS, self.element.w, self.BCs.bcs, J) # Nonlinear problem
         self.solver = NonlinearVariationalSolver(problem) # Nonlinear solver
         self.solver.parameters.update(self.param)
         
-    def initial(self, ic=None):
+    def initial(self, ic=None, timestamp=0.0):
         """
         Set initial condition
 
@@ -104,14 +102,17 @@ class NewtonSolver:
         ----------
         ic : TYPE, optional
             DESCRIPTION. The default is None.
+        timestamp : TYPE, optional
+            DESCRIPTION. The default is 0.0.
 
         Returns
         -------
         None.
 
         """
-        if ic is not None:
-            assign(self.w, ic)
+        
+        SetInitialCondition(0, ic=ic, fw=self.w, timestamp=timestamp)
+
         
     def parameters(self, param):
         """
@@ -130,7 +131,7 @@ class NewtonSolver:
         # update solver parameters
         self.param.update(param)
 
-    def force(self, bodymark=None, direction=None):
+    def force(self, mark=None, direction=None):
         """
         Get the force on the body (lift or drag)
 
@@ -147,7 +148,7 @@ class NewtonSolver:
         force : Fx or Fy
 
         """
-        return assemble((self.force_exp[direction]) * self.eqn.ds(bodymark))
+        return assemble((self.force_exp[direction]) * self.eqn.ds(mark))
 
     def solve(self, Re=None, sourceterm=None):
         """
@@ -173,4 +174,5 @@ class NewtonSolver:
         self.__SNSEqn()
         self.__NewtonMethod()
         self.solver.solve()
+        
         

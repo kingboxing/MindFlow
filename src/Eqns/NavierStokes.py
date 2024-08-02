@@ -6,7 +6,7 @@ Created on Wed Oct 18 17:07:48 2023
 @author: bojin
 """
 
-from dolfin import *
+from src.Deps import *
 
 class Incompressible:
     
@@ -35,7 +35,7 @@ class Incompressible:
 
         """
         self.dim=element.dimension
-        self.rho = 1.0 # fixed for incompressible flow
+        self.rho = 1.0 # fixed/ignored in incompressible flows
         self.Re=Re
         # boundary 
         self.ds = boundary.get_measure()
@@ -43,7 +43,7 @@ class Incompressible:
         self.n = FacetNormal(element.mesh)
         
         self.__funcalias(element)
-        self.__constantterm(sourceterm, bodyforce)
+        self.__external(sourceterm, bodyforce)
     
     def __funcalias(self, element):
         """
@@ -63,12 +63,42 @@ class Incompressible:
         # solved function
         self.u=element.u
         self.p=element.p
+        self.fw=(element.w,)
+        self.fu=(self.u,)
+        self.fp=(self.p,)
         # test function
         self.v=element.v
         self.q=element.q
+        # trial function for linear problems
+        self.tu=element.tu
+        self.tp=element.tp
+
+        
+    def __tempfunc(self, num=1):
+        """
+        provide extra functions to strore results at previous steps
+        self.fw[0]---> time step n+1 (element.w->cueenrt time step)
+        
+        Parameters
+        ----------
+        num : TYPE, optional
+            DESCRIPTION. The default is 1.
+
+        Returns
+        -------
+        None.
         
         
-    def __constantterm(self, sourceterm, bodyforce):
+
+        """
+        for x in range(num-len(self.fw)+1):
+            self.fw+=(self.element.add_functions(),)
+            (up, pp) = split(self.fw[x+1])
+            self.fu+=(up,)
+            self.fp+=(pp,)
+        
+        
+    def __external(self, sourceterm, bodyforce):
         """
         theoretically sourceterm = bodyforce. 
         here may be used differently for flexibility
@@ -103,7 +133,7 @@ class Incompressible:
         
 
     
-    def SteadyNonlinear(self):
+    def SteadyNonlinear(self): ## no trial functions
         """
         UFL expression of steady nonlinear Naviar-Stokes equations in the weak form
          
@@ -132,7 +162,6 @@ class Incompressible:
               inner(self.sourceterm, self.v) - inner(self.bodyforce, self.v) + 
               div(self.u) * self.q) * dx )
         
-        
         return F
     
     def SteadyLinear(self):
@@ -145,18 +174,46 @@ class Incompressible:
         """
         pass
     
-    def Transient(self, scheme="upwind", order=1):
+    def Transient(self, dt, scheme="backward", order=1, implicit=True):
         """
-        time relatived part 
+        UFL expression of time discretization scheme in the weak form
         
+        first order Backward scheme:
+        au   u - u_p
+        -- = ------
+        at     dt
+
+        Parameters
+        ----------
+        dt : TYPE
+            DESCRIPTION.
+        scheme : TYPE, optional
+            DESCRIPTION. The default is "backward".
+        order : TYPE, optional
+            DESCRIPTION. The default is 1.
+        implicit : TYPE, optional
+            DESCRIPTION. The default is True.
+            explicit for newton method expression
+
         Returns
         -------
-        None.
+        F : TYPE
+            DESCRIPTION.
+
         """
-        if order == 1 and scheme == "upwind":
-            F = Constant(1.0/self.dt) * dot((self.u - self.u_pre),self.v) 
-            
+       
+        self.dt = dt
+        if implicit is True:
+            if order == 1 and scheme == "backward":
+                self.__tempfunc(num=order) # add function at previous time step
+                F = dot((self.tu - self.fu[order]) / Constant( self.dt ) , self.v) * dx  # self.fu[1] at previous time step
         
+        if implicit is False:
+            if order == 1 and scheme == "backward":
+                self.__tempfunc(num=order)
+                F =  dot((self.u - self.fu[order]) / Constant( self.dt ) , self.v) * dx # self.fu[1] at previous time step
+            
+        return F
     
     def Frequency(self):
         """
@@ -169,9 +226,107 @@ class Incompressible:
         """
         pass
     
-    def IPCS(self):
+    def IPCS(self, dt):
+        """
+        Implicit Pressure Correction Scheme
+
+        Parameters
+        ----------
+        dt : TYPE
+            DESCRIPTION.
+
+        Returns
+        -------
+        None.
+
+        """
         
-        pass
+        # Reynolds number
+        self.nu = Constant(1.0/self.Re)
+        # -------------------------------------------------
+        # transient part
+        order = 1
+        transi = self.Transient(dt, order = order) # form transient part
+        self.__tempfunc(num=order+1) # add temp function for inner iterations
+        # align temp and pre functions
+        self.fu[2].assign(self.fu[1])
+        self.fu[2].assign(self.fu[1])
+        # fw[2]:intermidate step; fw[1]:previous step
+        
+        
+        # -------------------------------------------------
+        # Define expressions used in variational forms
+        U = 0.5 * (self.fu[2] + self.tu)
+        # -------------------------------------------------
+        # Define variational problem for step 1, Implicit-time integration
+        F1 = transi + dot(dot(self.fu[2], nabla_grad(self.fu[2])), self.v) * dx \
+             + inner(self.sigma(self.nu, U, self.fp[2]), self.epsilon(self.v)) * dx 
+        
+        #%% pending # if freeoutlet is False
+        # if 'freeoutlet' in locals():
+        F1 += dot(self.fp[2]*self.n, self.v)*self.ds - dot(self.nu*nabla_grad(U)*self.n, self.v)*self.ds
+        #%%
+        L1 = lhs(F1)
+        R1_1 = rhs(F1)
+        R1_2 = (dot(self.sourceterm, self.v) + dot(self.bodyforce, self.v))*dx
+        
+        # -------------------------------------------------
+        # Define variational problem for step 2
+        L2 = dot(nabla_grad(self.tp), nabla_grad(self.q)) * dx
+             
+        R2_1 = dot(nabla_grad(self.tp), nabla_grad(self.q)) * dx 
+        R2_2 = - Constant(1.0 / dt) * div(self.tu) * self.q * dx
+        
+        # -------------------------------------------------
+        # Define variational problem for step 3
+        L3 = dot(self.tu, self.v) * dx
+        
+        R3_1 = dot(self.tu, self.v) * dx 
+        R3_2 = - Constant(self.dt) * dot(nabla_grad(self.tp), self.v) * dx
+        
+        return (L1,L2,L3), ((R1_1, R1_2), (R2_1, R2_2), (R3_1,R3_2))
+        
+        
+        
+    def epsilon(self, u):
+        """
+        Define symmetric gradient
+
+        Parameters
+        ----------
+        u : TYPE
+            DESCRIPTION.
+
+        Returns
+        -------
+        TYPE
+            DESCRIPTION.
+
+        """
+        return sym(nabla_grad(u))
+
+    def sigma(self, nu, u, p):
+        """
+        
+
+        Parameters
+        ----------
+        nu : TYPE
+            DESCRIPTION.
+        u : TYPE
+            DESCRIPTION.
+        p : TYPE
+            DESCRIPTION.
+
+        Returns
+        -------
+        TYPE
+            DESCRIPTION.
+
+        """
+
+        return 2 * nu * self.epsilon(u) - p * Identity(len(u))
+
     
     def force_init(self):
         """

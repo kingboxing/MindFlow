@@ -46,12 +46,12 @@ datapath='./data/baseflow/bf_newton_cylinder_26k_re080'
 data = TimeSeries(datapath)
 data.retrieve(element.w.vector(), 0.0)
 # print norm-inf
-norm2=np.linalg.norm((element.w.vector()-solver.w.vector()).get_local(), ord=np.inf)
+norm2=np.linalg.norm((element.w.vector()-solver.flow.vector()).get_local(), ord=np.inf)
 
 elapsed_time = time.time() - start_time
 # print results
 print('Results are printed as follows : ')
-print('Re = %d     Error_2norm = %e     drag = %e    lift = %e' % (Re, norm2, solver.force(bodymark=5,direction=0) , solver.force(bodymark=5,direction=1)))
+print('Re = %d     Error_2norm = %e     drag = %e    lift = %e' % (Re, norm2, solver.force(mark=5,direction=0) , solver.force(mark=5,direction=1)))
 
 print('Elapsed Time = %e' % (elapsed_time))
 print('------------ Testing completed ------------')

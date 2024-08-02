@@ -6,7 +6,7 @@ Created on Tue Oct 17 22:34:36 2023
 @author: bojin
 """
 
-from dolfin import *
+from src.Deps import *
 
 """
 This module provides classes that define different finite elements
@@ -147,9 +147,11 @@ class Decoupled:
 
         self.tu = TrialFunction(self.functionspace_V)
         self.tp = TrialFunction(self.functionspace_Q)
+        self.tw = (self.tu, self.tp)
 
         self.u = Function(self.functionspace_V)
         self.p = Function(self.functionspace_Q)
+        self.w = (self.u, self.p)
 
     def add_functions(self):
         return Function(self.functionspace_V), Function(self.functionspace_Q)

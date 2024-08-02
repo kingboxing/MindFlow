@@ -6,10 +6,10 @@ Created on Wed Oct 18 11:06:27 2023
 @author: bojin
 """
 
-from dolfin import *
+from src.Deps import *
 
 """
-This module provides subclasses of FEniCS interface for
+This class provides subclasses of FEniCS interface of
 defining and marking boundaries 
 """
 
@@ -124,7 +124,7 @@ class SetBoundary(SubDomain):
     
 #%%
 """
-This module provides classes for setting up boundary conditions
+This class provides classes for setting up boundary conditions
 """
 
 class SetBoundaryCondition:
@@ -163,8 +163,8 @@ class SetBoundaryCondition:
     >>> bc.set_boundarycondition(boundarycondition, 1)
 
     """
-    def __init__(self, element, boundary):
-        self.functionspace = element.functionspace # 
+    def __init__(self, functionspace, boundary):
+        self.functionspace = functionspace # 
         self.boundaries = boundary.get_domain() # Get the FacetFunction on given mesh
         self.bcs = []
         
@@ -230,6 +230,7 @@ class SetBoundaryCondition:
         return Vec_bc
     
 #%%
+
 class BoundaryConditionFormat:
     """
     boundary conditions of cases for testing
