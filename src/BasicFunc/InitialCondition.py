@@ -42,6 +42,8 @@ class SetInitialCondition:
         """
         if noise is not False and element_out is not None:
             vec_noise=self.__setnoise(noise, element_out)
+        else:
+            vec_noise=None
             
         if ic is not None and fw is not None:
 
@@ -77,10 +79,10 @@ class SetInitialCondition:
         """
         timeseries_flow = TimeSeries(path)
         timeseries_flow.retrieve(fw.vector(), timestamp)
-        
+#%%        
     def __readfile_hdf5(self, hdf, fw, timestamp, label, mesh):
         """
-        
+        pending
 
         Parameters
         ----------
@@ -109,9 +111,9 @@ class SetInitialCondition:
                 break
         if time_bool is False:
             info('Initial Timestamp not found !!!')
-
+#%%
         
-    def __setfunc(self, ic, fw, timestamp):
+    def __setfunc(self, ic, fw, timestamp=0.0):
         """
         
 
@@ -131,15 +133,15 @@ class SetInitialCondition:
         """
         if type(ic) is type("path"):
             self.__readfile(ic, fw, timestamp)
-        elif type(ic) is type(fw):
+        elif (type(ic) is function.function.Function) and (type(fw) is function.function.Function):
             assign(fw, ic)
         else:
             info("Wrong Format of Initial Conidtion (Please give a path or function)")
             
-            
+#%%
     def __setfunc_parallel(self, ic, fw, mesh, timestamp, element_in = None, element_out = None):
         """
-        
+        for IPCS
 
         Parameters
         ----------
@@ -163,18 +165,28 @@ class SetInitialCondition:
         """
         # set parallel in Decoupled element
         if type(ic) is type("path"): # if a path is given
-            hdf = HDF5File(mesh.mpi_comm(), path, 'r')
+            hdf = HDF5File(mesh.mpi_comm(), ic+'.h5', 'r')
             if hdf.has_dataset('Velocity') and hdf.has_dataset('Pressure'): # stored in two datasets
                 self.__readfile_hdf5(hdf, fw[0], timestamp, 'Velocity', mesh)
                 self.__readfile_hdf5(hdf, fw[1], timestamp, 'Pressure', mesh)
-            elif hdf.has_dataset('Coupled Field'):
-                self.__readfile_hdf5(hdf, element_in.w, timestamp, 'Coupled Field', mesh)
-                assign(fw[0], project(element_in.u, element_out.functionspace_V, solver_type='gmres'))
-                assign(fw[1], project(element_in.p, element_out.functionspace_Q, solver_type='gmres'))
-        else:
-            self.__set_fun(ic[0], fw[0])
-            self.__set_fun(ic[1], fw[1])
-
+            else:
+                if hdf.has_dataset('Coupled Field'):
+                    hdf.rename(hdf.label(), 'Coupled Field')
+                    self.__readfile_hdf5(hdf, element_in.w, timestamp, 'Coupled Field', mesh)
+                elif element_in.type == 'TaylorHood':
+                    self.__readfile(ic, element_in.w, timestamp)
+                    
+                assign(fw[0], element_in.w.sub(0))
+                assign(fw[1], element_in.w.sub(1))
+                
+        elif element_in.type == element_out.type: # type is 'Decoupled', ic is a tuple
+            self.__setfunc(ic[0], fw[0])
+            self.__setfunc(ic[1], fw[1])
+            
+        elif element_in.type == 'TaylorHood': # ic is a Function
+            self.__setfunc(ic.sub(0), fw[0])
+            self.__setfunc(ic.sub(1), fw[1])
+#%%
     def __setnoise(self, noise, element_out):
         """
         
@@ -217,6 +229,28 @@ class SetInitialCondition:
         else:
             info("Unknow element type in initial noise setting")
         return vec_noise
+    
+    def visit_hdf5(self, path):
+        """
+        visit each attributes in hdf5 file
+
+        Parameters
+        ----------
+        path : TYPE
+            DESCRIPTION.
+
+        Returns
+        -------
+        None.
+
+        """
+        import h5py
+        with h5py.File(path+'.h5', 'r') as h5file:
+            # List all the datasets in the file
+            def print_name(name):
+                print(name)
+    
+            h5file.visit(print_name)
           
 
 ## abandoned

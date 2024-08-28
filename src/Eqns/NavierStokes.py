@@ -13,9 +13,9 @@ class Incompressible:
     """
     Expressions of different Navier-Stokes Equations
     """
-    def __init__(self, element, boundary, Re, sourceterm=None, bodyforce=None):
+    def __init__(self, element, boundary, Re, const_expr=None, time_expr=None):
         """
-
+        
         Parameters
         ----------
         element : TYPE
@@ -24,9 +24,9 @@ class Incompressible:
             DESCRIPTION.
         Re : TYPE, optional
             DESCRIPTION. The default is None.
-        sourceterm : TYPE, optional
+        const_expr : TYPE, optional
             DESCRIPTION. The default is None.
-        bodyforce : TYPE, optional
+        time_expr : TYPE, optional
             DESCRIPTION. The default is None.
 
         Returns
@@ -34,8 +34,10 @@ class Incompressible:
         None.
 
         """
+        self.element=element
         self.dim=element.dimension
         self.rho = 1.0 # fixed/ignored in incompressible flows
+        # Reynolds number
         self.Re=Re
         # boundary 
         self.ds = boundary.get_measure()
@@ -43,7 +45,7 @@ class Incompressible:
         self.n = FacetNormal(element.mesh)
         
         self.__funcalias(element)
-        self.__external(sourceterm, bodyforce)
+        self.__sourceterm(const_expr, time_expr)
     
     def __funcalias(self, element):
         """
@@ -63,7 +65,8 @@ class Incompressible:
         # solved function
         self.u=element.u
         self.p=element.p
-        self.fw=(element.w,)
+        self.w=element.w
+        self.fw=(self.w,)
         self.fu=(self.u,)
         self.fp=(self.p,)
         # test function
@@ -93,52 +96,54 @@ class Incompressible:
         """
         for x in range(num-len(self.fw)+1):
             self.fw+=(self.element.add_functions(),)
-            (up, pp) = split(self.fw[x+1])
+            if type(self.fw[x+1]) is tuple: # for decoupled element
+                up = self.fw[x+1][0]
+                pp = self.fw[x+1][1]
+            else: # for taylorhood element
+                (up, pp) = split(self.fw[x+1])
             self.fu+=(up,)
             self.fp+=(pp,)
         
         
-    def __external(self, sourceterm, bodyforce):
+    def __sourceterm(self, const_expr, time_expr):
         """
-        theoretically sourceterm = bodyforce. 
-        here may be used differently for flexibility
+        external forcing
 
         Parameters
         ----------
-        sourceterm : TYPE
-            DESCRIPTION.
-        bodyforce : TYPE
-            DESCRIPTION.
+        const_expr : TYPE
+            for constant expressions
+        time_expr : TYPE
+            for time-varying expressions
 
         Returns
         -------
         None.
 
         """
-        # source term, doesn't change outlet boundary conditions, not balanced by pressure #ignore
-        if type(sourceterm) is function.constant.Constant:
-            self.sourceterm = sourceterm
-        elif sourceterm is None:
-            self.sourceterm = Constant(tuple([0.0]*self.dim))
+        # 
+        if type(const_expr) is function.constant.Constant:
+            self.const_expr = const_expr
+        elif const_expr is None:
+            self.const_expr = Constant(tuple([0.0]*self.dim))
         else:
-            info('Please specify a Constant or Expression for sourceterm')
+            info('Please specify a Constant or Expression as sourceterm')
             
-        # body force, may change outlet boundary conditions, balanced by pressure #ignore
-        if type(bodyforce) is function.constant.Constant:
-            self.bodyforce = bodyforce
-        elif bodyforce is None:
-            self.bodyforce = Constant(tuple([0.0]*self.dim))
+        # 
+        if type(time_expr) is function.constant.Constant:
+            self.time_expr = time_expr
+        elif time_expr is None:
+            self.time_expr = Constant(tuple([0.0]*self.dim))
         else:
-            info('Please specify a Constant or Expression for bodyforce')
-        
-
+            info('Please specify a Constant or Expression as sourceterm')
+            
     
     def SteadyNonlinear(self): ## no trial functions
         """
         UFL expression of steady nonlinear Naviar-Stokes equations in the weak form
          
         au                  1  
-        -- + u * grad(u) + --- grad(p) - nu * laplacian(u) - (s + f) = 0 
+        -- + u * grad(u) + --- grad(p) - nu * laplacian(u) - F = 0 
         at                 rho
         
         div(u)=0
@@ -151,18 +156,21 @@ class Incompressible:
         
         Returns
         -------
-        F: UFL expression of steady Navier-Stokes Equations in the weak form
+        NS: UFL expression of steady Navier-Stokes Equations in the weak form
+        
+        F: RHS external force/source term
         
         """
         self.nu = Constant(1.0/self.Re)
 
-        F = ((inner(dot(self.u, nabla_grad(self.u)), self.v) -
+        NS = ((inner(dot(self.u, nabla_grad(self.u)), self.v) -
               Constant(1.0 / self.rho) * self.p * div(self.v) +
-              self.nu * inner(grad(self.u), grad(self.v)) -
-              inner(self.sourceterm, self.v) - inner(self.bodyforce, self.v) + 
+              self.nu * inner(grad(self.u), grad(self.v)) + 
               div(self.u) * self.q) * dx )
         
-        return F
+        F = self.SourceTerm()
+        
+        return NS-F
     
     def SteadyLinear(self):
         """
@@ -172,7 +180,16 @@ class Incompressible:
         -------
         None.
         """
-        pass
+        # self.u represents base flow field
+        self.nu = Constant(1.0/self.Re)
+        LSNS = (inner(dot(self.u, nabla_grad(self.tu)), self.v) +
+                inner(dot(self.tu, nabla_grad(self.u)), self.v) -
+                Constant(1.0 / self.rho) * self.tp * div(self.v)+
+                self.nu * inner(grad(self.tu), grad(self.v))
+                + div(self.tu)* self.q) * dx
+        
+        return LSNS
+        
     
     def Transient(self, dt, scheme="backward", order=1, implicit=True):
         """
@@ -197,7 +214,7 @@ class Incompressible:
 
         Returns
         -------
-        F : TYPE
+        TNS : TYPE
             DESCRIPTION.
 
         """
@@ -206,29 +223,43 @@ class Incompressible:
         if implicit is True:
             if order == 1 and scheme == "backward":
                 self.__tempfunc(num=order) # add function at previous time step
-                F = dot((self.tu - self.fu[order]) / Constant( self.dt ) , self.v) * dx  # self.fu[1] at previous time step
+                TNS = dot((self.tu - self.fu[order]) / Constant( self.dt ) , self.v) * dx  # self.fu[1] at previous time step
         
         if implicit is False:
             if order == 1 and scheme == "backward":
                 self.__tempfunc(num=order)
-                F =  dot((self.u - self.fu[order]) / Constant( self.dt ) , self.v) * dx # self.fu[1] at previous time step
+                TNS =  dot((self.u - self.fu[order]) / Constant( self.dt ) , self.v) * dx # self.fu[1] at previous time step
             
-        return F
+        return TNS
     
-    def Frequency(self):
+    def Frequency(self, s):
         """
         time relatived part after fourier/laplace transformation
 
+        Parameters
+        ----------
+        s : TYPE
+            the Laplace variable s is also known as operator variable in the Laplace domain.
+
         Returns
         -------
-        None.
+        FNS_r : TYPE
+            real part, growth rate.
+        FNS_i : TYPE
+            imag part, frequency.
 
         """
-        pass
+        omega = np.imag(s)
+        sigma = np.real(s)
+        
+        FNS_i = Constant(omega) * inner(self.tu, self.v) * dx # imaginary part
+        FNS_r = Constant(sigma) * inner(self.tu, self.v) * dx # real part
+        
+        return (FNS_r, FNS_i)
     
     def IPCS(self, dt):
         """
-        Implicit Pressure Correction Scheme
+        Implicit Pressure Correction Scheme (seems compressible NS eqns are used)
 
         Parameters
         ----------
@@ -240,9 +271,8 @@ class Incompressible:
         None.
 
         """
-        
-        # Reynolds number
         self.nu = Constant(1.0/self.Re)
+        
         # -------------------------------------------------
         # transient part
         order = 1
@@ -251,8 +281,7 @@ class Incompressible:
         # align temp and pre functions
         self.fu[2].assign(self.fu[1])
         self.fu[2].assign(self.fu[1])
-        # fw[2]:intermidate step; fw[1]:previous step
-        
+        # fw[2]:intermidate step; fw[1]:previous step ; fw[0]: current step
         
         # -------------------------------------------------
         # Define expressions used in variational forms
@@ -261,15 +290,18 @@ class Incompressible:
         # Define variational problem for step 1, Implicit-time integration
         F1 = transi + dot(dot(self.fu[2], nabla_grad(self.fu[2])), self.v) * dx \
              + inner(self.sigma(self.nu, U, self.fp[2]), self.epsilon(self.v)) * dx 
+             
         
-        #%% pending # if freeoutlet is False
-        # if 'freeoutlet' in locals():
-        F1 += dot(self.fp[2]*self.n, self.v)*self.ds - dot(self.nu*nabla_grad(U)*self.n, self.v)*self.ds
-        #%%
         L1 = lhs(F1)
         R1_1 = rhs(F1)
-        R1_2 = (dot(self.sourceterm, self.v) + dot(self.bodyforce, self.v))*dx
+        R1_2 = self.SourceTerm()#(dot(self.const_expr, self.v) + dot(self.time_expr, self.v))*dx
         
+        # -------------------------------------------------
+        # if bcs is not full and freeoutlet is False # gradient of [u, v] in boundary-normal direction is zero # fully developped
+        # FBC = self.BoundaryTraction(self.fp[2], U, self.nu, mode = 1) #dot(self.fp[2]*self.n, self.v)*self.ds - dot(self.nu*nabla_grad(U)*self.n, self.v)*self.ds
+   
+        # LBC = lhs(FBC)
+        # RBC = rhs(FBC)
         # -------------------------------------------------
         # Define variational problem for step 2
         L2 = dot(nabla_grad(self.tp), nabla_grad(self.q)) * dx
@@ -286,8 +318,63 @@ class Incompressible:
         
         return (L1,L2,L3), ((R1_1, R1_2), (R2_1, R2_2), (R3_1,R3_2))
         
+    def SourceTerm(self):
+        """
+        
+
+        Returns
+        -------
+        None.
+
+        """
+        F = (inner(self.const_expr, self.v)+ inner(self.time_expr, self.v))* dx
+            #(dot(self.const_expr, self.v) + dot(self.time_expr, self.v))*dx
+            
+        return F
         
         
+    def BoundaryTraction(self, p, u, nu, mark=None, mode=None):
+        """
+        residual term appearing in the standard NS variational problem
+        A feature of variational formulations is that the test function v is 
+        equired to vanish on the parts of the boundary where the solution u is known
+
+        Parameters
+        ----------
+        p : TYPE
+            DESCRIPTION.
+        u : TYPE
+            DESCRIPTION.
+        nu : TYPE
+            DESCRIPTION.
+        mark : TYPE, optional
+            DESCRIPTION. The default is None.
+        mode : TYPE, optional
+            DESCRIPTION. The default is None.
+        Returns
+        -------
+        FBC : TYPE
+            residual term due to variational form; cancelled by implicit(e.g. free outlet) boundary condition
+            test: FBC cancelled by Dirchlet BC and Free BC at Outlet; convergence problem when no BC applied at Boundary. 
+                    cause convergence problem if the number of BCs is not equal to that of boundraies
+
+        """
+        if mark is None:
+            ds0= self.ds
+        else:
+            ds0= self.ds(mark)
+        
+        if mode is None or mode == 0:
+            FBC = (dot(p*self.n,self.v)-dot(nu*grad(u)*self.n,self.v))*ds0 # from standard incompressible NS eqn
+        elif mode == 1:
+            FBC = (dot(p*self.n,self.v)-dot(nu*nabla_grad(u)*self.n,self.v))*ds0 # from compressible NS eqn with fully developed assumption + pressure bc
+        elif mode == 2:
+            FBC = (dot(p*self.n,self.v)-dot(nu*grad(u)*self.n,self.v)-dot(nu*nabla_grad(u)*self.n,self.v))*ds0 # from compressible NS eqn
+        elif mode == 3:
+            FBC = dot(p*self.n,self.v)*ds0 # from standard incompressible NS eqn with fully developed assumption + pressure bc
+
+        return FBC
+    
     def epsilon(self, u):
         """
         Define symmetric gradient
@@ -328,20 +415,48 @@ class Incompressible:
         return 2 * nu * self.epsilon(u) - p * Identity(len(u))
 
     
-    def force_init(self):
+    def force_expr(self):
         """
         Force expression (lift and drag)
-        
+
         Returns
         -------
-        None.
+        force1 : TYPE
+            pressure part.
+        force2 : TYPE
+            stress part.
+
         """
-        I = Identity(self.u.geometric_dimension())
-        D = sym(grad(self.u))
-        T = -self.p * I + 2 * self.nu * D#
-        force = - T * self.n
+
+        self.nu = Constant(1.0/self.Re)
+        # I = Identity(self.u.geometric_dimension())
+        # D = sym(grad(self.u))
+        # T = -self.p * I + 2 * self.nu * D#
+        # force = - T * self.n
         
-        return force
+        I = Identity(self.tu.geometric_dimension())
+        D = sym(grad(self.tu))
+        T1 = -self.tp * I
+        T2 = 2.0 * self.nu * D
+        force1 = -T1 * self.n
+        force2 = -T2 * self.n
+        
+        return (force1, force2)
+    
+    def vorticity_expr(self):
+        """
+        vorticity exprression
+
+        Returns
+        -------
+        vorticity : TYPE
+            DESCRIPTION.
+
+        """
+        
+        vorticity=curl(self.tu)
+        return vorticity
+        
         
         
 

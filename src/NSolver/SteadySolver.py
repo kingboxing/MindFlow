@@ -32,7 +32,7 @@ class NewtonSolver(NSolverBase):
 
     """
     
-    def __init__(self, mesh, Re=None, sourceterm=None, bodyforce=None, order=(2,1), dim=2, constrained_domain=None):
+    def __init__(self, mesh, Re=None, const_expr=None, order=(2,1), dim=2, constrained_domain=None):
         """
         Initial Steady Incompressible Navier-Stokes Newton Solver
 
@@ -42,9 +42,7 @@ class NewtonSolver(NSolverBase):
             DESCRIPTION.
         Re : TYPE, optional
             DESCRIPTION. The default is None.
-        sourceterm : TYPE, optional
-            DESCRIPTION. The default is None.
-        bodyforce : TYPE, optional
+        const_expr : TYPE, optional
             DESCRIPTION. The default is None.
         order : TYPE, optional
             DESCRIPTION. The default is (2,1).
@@ -60,12 +58,12 @@ class NewtonSolver(NSolverBase):
         """
         # init solver
         element = TaylorHood(mesh = mesh, order = order, dim = dim, constrained_domain = constrained_domain) # initialise finite element space
-        NSolverBase.__init__(self, mesh, element, Re, sourceterm, bodyforce)
+        NSolverBase.__init__(self, mesh, element, Re, const_expr, None)
        
         # boundary condition
-        self.BCs = SetBoundaryCondition(self.element.functionspace, self.boundary)
-        self.set_boundarycondition=self.BCs.set_boundarycondition
-
+        self.boundary_condition = SetBoundaryCondition(self.element.functionspace, self.boundary)
+        # init param
+        self.param['newton_solver']={}
 
     def __SNSEqn(self):
         """
@@ -77,9 +75,17 @@ class NewtonSolver(NSolverBase):
 
         """
         # form Steady Incompressible Navier-Stokes Equations
-        self.SNS=self.eqn.SteadyNonlinear()
-        # force act on the body
-        self.force_exp=self.eqn.force_init() 
+        seqn=self.eqn.SteadyNonlinear()
+        self.SNS=seqn
+        
+        " pending for dealing with free boundary/ zero boundary traction condition in bc_list"
+        # if self.boundary_condition.has_free_bc is False: 
+        #     self.SNS+=seqn[1] 
+        # else:
+        #     self.has_free_bc=self.boundary_condition.has_free_bc
+        
+        for key in self.has_traction_bc.keys():
+            self.SNS+=self.BoundaryTraction(self.eqn.p, self.eqn.u, self.eqn.nu, mark=self.has_traction_bc[key][0], mode=self.has_traction_bc[key][1])
 
     def __NewtonMethod(self):
         """
@@ -90,9 +96,9 @@ class NewtonSolver(NSolverBase):
         None.
         """
         J = derivative(self.SNS, self.element.w, self.element.tw) # Jacobian matrix
-        problem = NonlinearVariationalProblem(self.SNS, self.element.w, self.BCs.bcs, J) # Nonlinear problem
+        problem = NonlinearVariationalProblem(self.SNS, self.element.w, self.boundary_condition.bc_list, J) # Nonlinear problem
         self.solver = NonlinearVariationalSolver(problem) # Nonlinear solver
-        self.solver.parameters.update(self.param)
+        self.solver.parameters.update({'newton_solver':self.param['newton_solver']})
         
     def initial(self, ic=None, timestamp=0.0):
         """
@@ -111,7 +117,7 @@ class NewtonSolver(NSolverBase):
 
         """
         
-        SetInitialCondition(0, ic=ic, fw=self.w, timestamp=timestamp)
+        SetInitialCondition(0, ic=ic, fw=self.eqn.fw[0], timestamp=timestamp)
 
         
     def parameters(self, param):
@@ -131,26 +137,8 @@ class NewtonSolver(NSolverBase):
         # update solver parameters
         self.param.update(param)
 
-    def force(self, mark=None, direction=None):
-        """
-        Get the force on the body (lift or drag)
 
-        Parameters
-        ----------------------------
-        bodymark : int
-            the boundary mark of the body
-
-        direction: int
-            0 means X direction and 1 means Y direction
-
-        Returns
-        ----------------------------
-        force : Fx or Fy
-
-        """
-        return assemble((self.force_exp[direction]) * self.eqn.ds(mark))
-
-    def solve(self, Re=None, sourceterm=None):
+    def solve(self, Re=None, const_expr=None):
         """
         Solve the problem
 
@@ -158,7 +146,7 @@ class NewtonSolver(NSolverBase):
         ----------
         Re : TYPE, optional
             DESCRIPTION. The default is None.
-        sourceterm : TYPE, optional
+        const_expr : TYPE, optional
             DESCRIPTION. The default is None.
 
         Returns
@@ -168,8 +156,8 @@ class NewtonSolver(NSolverBase):
         """
         if Re is not None:
             self.eqn.Re = Re
-        if sourceterm is not None:
-            self.eqn.sourceterm = sourceterm
+        if const_expr is not None:
+            self.eqn.const_expr = const_expr
             
         self.__SNSEqn()
         self.__NewtonMethod()

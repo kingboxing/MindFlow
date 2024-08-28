@@ -53,7 +53,7 @@ class TaylorHood:
     def __init__(self, mesh=None, dim=2, order=(2,1), constrained_domain=None):
         self.type = 'TaylorHood'
         self.mesh = mesh
-        self.dimension = dim
+        self.dimension = dim # dimension of velocity field
         self.order=order
         self.constrained_domain=constrained_domain
         self.set_functionspace()

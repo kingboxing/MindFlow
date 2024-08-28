@@ -12,9 +12,208 @@ from src.Deps import *
 This class provides subclasses of FEniCS interface of
 defining and marking boundaries 
 """
+#%%
+class BoundaryCondition:
+    """
+    Select Boundary Condition
+    """
+    def __init__(self, element):
+        self.bc_list={}
+        self.element=element
+    def VelocityInlet(self, mark, vel):
+        """
+        
+
+        Parameters
+        ----------
+        mark : int
+            DESCRIPTION.
+        vel : tuple
+            DESCRIPTION.
+
+        Returns
+        -------
+        None.
+
+        """
+        if type(mark) is int:
+            if type(vel) is tuple:
+                self.bc_list[mark].update({'FunctionSpace': 'V', 'Value': Constant(vel), 'BoundaryTraction': None})
+            elif isinstance(vel, (function.function.Function, function.expression.Expression)):
+                self.bc_list[mark].update({'FunctionSpace': 'V', 'Value': vel, 'BoundaryTraction': None})
+            else:
+                raise ValueError('Parameter type error of velocity-inlet boundary condition')
+        else:
+            raise ValueError('Parameter type error of velocity-inlet boundary condition')
+        
+        if self.element.type=='TaylorHood':
+            self.bc_list[mark]['FunctionSpace']+='.sub(0)'
+            
+         
+    def SlipWall(self, mark, norm, vel=0.0):
+        """
+        boundary parallel or normal to axis
+
+        Parameters
+        ----------
+        mark : TYPE
+            DESCRIPTION.
+        norm : TYPE
+            positive vector normal to the boundary.
+
+        Raises
+        ------
+        ValueError
+            DESCRIPTION.
+
+        Returns
+        -------
+        None.
+
+        """
+        if type(mark) is int and type(norm) is tuple:
+            ind=str(norm.index(1))
+            self.bc_list[mark].update({'FunctionSpace': 'V.sub('+ind+')',   'Value': Constant(vel), 'BoundaryTraction': None})
+        else:
+            raise ValueError('Parameter type error of symmetry boundary condition')
+            
+        if self.element.type=='TaylorHood':
+            self.bc_list[mark]['FunctionSpace']=self.bc_list[mark]['FunctionSpace'].replace('V','V.sub(0)')
+            
+    
+    def Symmetry(self, mark, norm):
+        """
+        
+
+        Parameters
+        ----------
+        mark : TYPE
+            DESCRIPTION.
+        norm : TYPE
+            DESCRIPTION.
+
+        Returns
+        -------
+        None.
+
+        """
+        if type(mark) is int and type(norm) is tuple:
+            self.SlipWall(mark, norm)
+        else:
+            raise ValueError('Parameter type error of slip wall boundary condition')
+    
+    def NoSlipWall(self, mark):
+        """
+        
+
+        Parameters
+        ----------
+        mark : TYPE
+            DESCRIPTION.
+        dim : TYPE, optional
+            DESCRIPTION. The default is 2.
+
+        Raises
+        ------
+        ValueError
+            DESCRIPTION.
+
+        Returns
+        -------
+        None.
+
+        """
+        vel=(0,)*self.element.dimension
+        
+        if type(mark) is int:
+            self.VelocityInlet(mark, vel)
+        else:
+            raise ValueError('Parameter type error of no-slip wall boundary condition')
+    
+    def FreeBoundary(self, mark):
+        """
+        
+
+        Parameters
+        ----------
+        mark : TYPE
+            DESCRIPTION.
+
+        Raises
+        ------
+        ValueError
+            DESCRIPTION.
+
+        Returns
+        -------
+        None.
+
+        """
+        if type(mark) is int:
+            self.bc_list[mark].update({'FunctionSpace': None,   'Value': 'Free Boundary', 'BoundaryTraction': None})
+        else:
+            raise ValueError('Parameter type error of free boundary condition')
+    
+    def PressureInlet(self, mark, pre, mode=1):
+        """
+        pending for case
+
+        Parameters
+        ----------
+        mark : TYPE
+            DESCRIPTION.
+        pre : TYPE
+            DESCRIPTION.
+        mode : TYPE, optional
+            DESCRIPTION. The default is 1.
+
+        Raises
+        ------
+        ValueError
+            DESCRIPTION.
+
+        Returns
+        -------
+        None.
+
+        """
+        if isinstance(pre, (int, float)):
+            self.bc_list[mark].update({'FunctionSpace': 'Q',   'Value': Constant(pre), 'BoundaryTraction': (mark, mode)}) # mode 1 for BoundaryTraction 
+        elif isinstance(pre, (function.function.Function, function.expression.Expression)):
+            self.bc_list[mark].update({'FunctionSpace': 'Q',   'Value': pre, 'BoundaryTraction': mode})
+        else:
+            raise ValueError('Parameter type error of pressure inlet boundary condition')
+
+        if self.element.type=='TaylorHood':
+            self.bc_list[mark]['FunctionSpace']=self.bc_list[mark]['FunctionSpace'].replace('Q','Q.sub(1)')
+          
 
 
-class SetBoundary(SubDomain):
+    def PressureOutlet(self, mark, pre, mode=1):
+        """
+        pending for case
+
+        Parameters
+        ----------
+        mark : TYPE
+            DESCRIPTION.
+        pre : TYPE
+            DESCRIPTION.
+        mode : TYPE, optional
+            DESCRIPTION. The default is 1.
+
+        Returns
+        -------
+        None.
+
+        """
+        if isinstance(pre, (int, float,function.function.Function, function.expression.Expression)):
+            self.PressureInlet(mark, pre, mode=mode)
+        else:
+            raise ValueError('Parameter type error of pressure outlet boundary condition')
+#%%
+
+class SetBoundary(SubDomain, BoundaryCondition):
     """
     A subclass of SubDomain for defining and marking a boundary
 
@@ -40,8 +239,9 @@ class SetBoundary(SubDomain):
 
     """
 
-    def __init__(self, mesh, mark_all=0):
+    def __init__(self, mesh, element, mark_all=0):
         SubDomain.__init__(self) # initialize base class
+        BoundaryCondition.__init__(self, element)
         self.mark_all=mark_all
         self.mesh = mesh
         self.boundaries = MeshFunction('size_t', mesh, mesh.topology().dim() - 1)#FacetFunction("size_t", self.mesh); using int to mark boundaries
@@ -144,7 +344,7 @@ class SetBoundaryCondition:
 
     boundaries : FacetFunction on given mesh
 
-    bcs : a list with boundary conditions
+    bc_list : a list with boundary conditions
 
     Examples
     -------------------
@@ -166,7 +366,8 @@ class SetBoundaryCondition:
     def __init__(self, functionspace, boundary):
         self.functionspace = functionspace # 
         self.boundaries = boundary.get_domain() # Get the FacetFunction on given mesh
-        self.bcs = []
+        self.bc_list = []
+        self.has_free_bc=False
         
         self.v = TestFunction(self.functionspace)
         self.u = TrialFunction(self.functionspace)
@@ -192,8 +393,9 @@ class SetBoundaryCondition:
                 info('Please specify the FunctionSpace and Value of the Dirichlet Boundary Condition Applied at Boundary % g' % mark)
             else:
                 info('Please specify the Value of the Dirichlet Boundary Condition Applied at Boundary % g' % mark)
-        elif bc_dict['Value'] in ['Free Outlet','FreeOutlet','freeoutlet','free outlet']:
-            info('Free outlet boundary condition applied at Boundary % g' % mark)
+        elif bc_dict['Value'] in ['Free Boundary']:
+            info('Free boundary condition (zero boundary traction) applied at Boundary % g' % mark)
+            self.has_free_bc+=1
         elif 'FunctionSpace' not in bc_dict:
             info('Please specify the FunctionSpace of the Dirichlet Boundary Condition Applied at Boundary % g' % mark)
         elif bc_dict['FunctionSpace'] is not None and bc_dict['Value'] is not None:
@@ -204,7 +406,7 @@ class SetBoundaryCondition:
                 else: # bc_dict applied to functionspace
                     bc= 'DirichletBC(self.functionspace' +  ',' + "bc_dict['Value']" + ',' \
                         + 'self.boundaries' + ',' + 'mark, method="geometric")'
-                self.bcs.append(eval(bc)) # boundary condition added to the list bcs
+                self.bc_list.append(eval(bc)) # boundary condition added to the list bcs
         else:
             info('No Dirichlet Boundary Condition at Boundary % g' % mark)
 
@@ -217,7 +419,7 @@ class SetBoundaryCondition:
         I = assemble(Constant(0.0)*dot(self.u, self.v) * dx)
         I.ident_zeros()
         Mat_bc = assemble(Constant(0.0)*dot(self.u, self.v) * dx)
-        [bc.apply(Mat_bc) for bc in self.bcs]
+        [bc.apply(Mat_bc) for bc in self.bc_list]
         Mat = I - Mat_bc
         return Mat
     
@@ -226,104 +428,105 @@ class SetBoundaryCondition:
         Vector that contains boundary condition values in the rows which have Dirichlet boundary conditions
         """        
         Vec_bc = assemble(Constant(0.0)*dot(self.func, self.v) * dx)
-        [bc.apply(Vec_bc) for bc in self.bcs]
+        [bc.apply(Vec_bc) for bc in self.bc_list]
         return Vec_bc
     
-#%%
-
-class BoundaryConditionFormat:
-    """
-    boundary conditions of cases for testing
-    """
-    
-    def __init__(self):
-        self.mesh_list=['cylinder_8k.xml','cylinder_13k.xml','cylinder_26k.xml','cylinder_74k_sym_60ds_40us.xml']
-        self.bc_list=['homogeneous','inhomogeneous']
-        
-    def get_boundaryconditions(self,mesh_name='cylinder_26k.xml',bc_type='homogeneous'):
-        if mesh_name in self.mesh_list and bc_type in self.bc_list:
-            return eval('self.__'+mesh_name[0:-4]+"('"+bc_type+"')")
-        else:
-            raise ValueError('boundary conditions type is not in the default list')
-    
-    def __cylinder_homogeneous(self):
-        BoundaryConditions = {'Top'   : {'FunctionSpace': 'V.sub(0).sub(1)',   'Value': Constant(0.0),       'Boundary': 'top',     'Mark': 1},
-                            'Bottom'  : {'FunctionSpace': 'V.sub(0).sub(1)',   'Value': Constant(0.0),       'Boundary': 'bottom',  'Mark': 2},
-                            'Inlet'   : {'FunctionSpace': 'V.sub(0)',          'Value': Constant((0.0,0.0)), 'Boundary': 'inlet',   'Mark': 3},
-                            'Cylinder': {'FunctionSpace': 'V.sub(0)',          'Value': Constant((0.0,0.0)), 'Boundary': 'cylinder','Mark': 5},
-                            'Outlet'  : {'FunctionSpace':  None,               'Value': 'FreeOutlet',        'Boundary': 'outlet',  'Mark': 4}
-                            }
-        return BoundaryConditions
-                   
-    def __cylinder_inhomogeneous(self):
-        BoundaryConditions = {'Top'   : {'FunctionSpace': 'V.sub(0).sub(1)',   'Value': Constant(0.0),       'Boundary': 'top',     'Mark': 1},
-                            'Bottom'  : {'FunctionSpace': 'V.sub(0).sub(1)',   'Value': Constant(0.0),       'Boundary': 'bottom',  'Mark': 2},
-                            'Inlet'   : {'FunctionSpace': 'V.sub(0)',          'Value': Constant((1.0,0.0)), 'Boundary': 'inlet',   'Mark': 3},
-                            'Cylinder': {'FunctionSpace': 'V.sub(0)',          'Value': Constant((0.0,0.0)), 'Boundary': 'cylinder','Mark': 5},
-                            'Outlet'  : {'FunctionSpace':  None,               'Value': 'FreeOutlet',        'Boundary': 'outlet',  'Mark': 4}
-                            }
-        return BoundaryConditions
-        
-    def __cylinder_8k(self,bc_type):
-        return eval('self.__cylinder_'+bc_type+'()')
-                   
-    def __cylinder_13k(self,bc_type):
-        return eval('self.__cylinder_'+bc_type+'()')
-            
-    def __cylinder_26k(self,bc_type):
-        return eval('self.__cylinder_'+bc_type+'()')
-                   
-    def __cylinder_74k_sym_60ds_40us(self,bc_type):
-        return eval('self.__cylinder_'+bc_type+'()')
 
 #%%
-class BoundaryFormat:
-    """
-    boundaries of meshes for testing
-    """
-    def __init__(self):
-        self.mesh_list=['cylinder_8k.xml','cylinder_13k.xml','cylinder_26k.xml','cylinder_74k_sym_60ds_40us.xml']
 
-    def get_boundary(self,mesh_name='cylinder_26k.xml'):
-        if mesh_name in self.mesh_list:
-            return eval('self.__'+mesh_name[0:-4]+'()')
-        else:
-            raise ValueError('boundary type is not in the test list')
+# class BoundaryConditionFormat:
+#     """
+#     boundary conditions of cases for testing
+#     """
     
-    def __cylinder_8k(self):
-        BoundaryLocations = {'Top'      : {'Mark': 1, 'Location':'on_boundary and near(x[1], 12.0, tol)'},
-                           'Bottom'     : {'Mark': 2, 'Location':'on_boundary and near(x[1], -12.0, tol)'},
-                           'Inlet'      : {'Mark': 3, 'Location':'on_boundary and x[0] < 0.0 + tol and not (between(x[0], (-0.6, 0.6)) and between(x[1], (-0.6, 0.6)))'},
-                           'Outlet'     : {'Mark': 4, 'Location':'on_boundary and near(x[0], 20.0, tol)'},
-                           'Cylinder'   : {'Mark': 5, 'Location':'on_boundary and between(x[0], (-0.6, 0.6)) and between(x[1], (-0.6, 0.6))'},
-                            }
-        return BoundaryLocations
+#     def __init__(self):
+#         self.mesh_list=['cylinder_8k.xml','cylinder_13k.xml','cylinder_26k.xml','cylinder_74k_sym_60ds_40us.xml']
+#         self.bc_list=['homogeneous','inhomogeneous']
+        
+#     def get_boundaryconditions(self,mesh_name='cylinder_26k.xml',bc_type='homogeneous'):
+#         if mesh_name in self.mesh_list and bc_type in self.bc_list:
+#             return eval('self.__'+mesh_name[0:-4]+"('"+bc_type+"')")
+#         else:
+#             raise ValueError('boundary conditions type is not in the default list')
+    
+#     def __cylinder_homogeneous(self):
+#         BoundaryConditions = {'Top'   : {'FunctionSpace': 'V.sub(0).sub(1)',   'Value': Constant(0.0),       'Boundary': 'top',     'Mark': 1},
+#                             'Bottom'  : {'FunctionSpace': 'V.sub(0).sub(1)',   'Value': Constant(0.0),       'Boundary': 'bottom',  'Mark': 2},
+#                             'Inlet'   : {'FunctionSpace': 'V.sub(0)',          'Value': Constant((0.0,0.0)), 'Boundary': 'inlet',   'Mark': 3},
+#                             'Cylinder': {'FunctionSpace': 'V.sub(0)',          'Value': Constant((0.0,0.0)), 'Boundary': 'cylinder','Mark': 5},
+#                             'Outlet'  : {'FunctionSpace':  None,               'Value': 'FreeOutlet',        'Boundary': 'outlet',  'Mark': 4}
+#                             }
+#         return BoundaryConditions
                    
-    def __cylinder_13k(self):
-        BoundaryLocations = {'Top'      : {'Mark': 1, 'Location':'on_boundary and near(x[1], 15.0, tol)'},
-                           'Bottom'     : {'Mark': 2, 'Location':'on_boundary and near(x[1], -15.0, tol)'},
-                           'Inlet'      : {'Mark': 3, 'Location':'on_boundary and x[0] < 0.0 + tol and not (between(x[0], (-0.6, 0.6)) and between(x[1], (-0.6, 0.6)))'},
-                           'Outlet'     : {'Mark': 4, 'Location':'on_boundary and near(x[0], 23.0, tol)'},
-                           'Cylinder'   : {'Mark': 5, 'Location':'on_boundary and between(x[0], (-0.6, 0.6)) and between(x[1], (-0.6, 0.6))'},
-                           }
-        return BoundaryLocations
+#     def __cylinder_inhomogeneous(self):
+#         BoundaryConditions = {'Top'   : {'FunctionSpace': 'V.sub(0).sub(1)',   'Value': Constant(0.0),       'Boundary': 'top',     'Mark': 1},
+#                             'Bottom'  : {'FunctionSpace': 'V.sub(0).sub(1)',   'Value': Constant(0.0),       'Boundary': 'bottom',  'Mark': 2},
+#                             'Inlet'   : {'FunctionSpace': 'V.sub(0)',          'Value': Constant((1.0,0.0)), 'Boundary': 'inlet',   'Mark': 3},
+#                             'Cylinder': {'FunctionSpace': 'V.sub(0)',          'Value': Constant((0.0,0.0)), 'Boundary': 'cylinder','Mark': 5},
+#                             'Outlet'  : {'FunctionSpace':  None,               'Value': 'FreeOutlet',        'Boundary': 'outlet',  'Mark': 4}
+#                             }
+#         return BoundaryConditions
+        
+#     def __cylinder_8k(self,bc_type):
+#         return eval('self.__cylinder_'+bc_type+'()')
+                   
+#     def __cylinder_13k(self,bc_type):
+#         return eval('self.__cylinder_'+bc_type+'()')
             
-    def __cylinder_26k(self):
-        BoundaryLocations = {'Top'      : {'Mark': 1, 'Location':'on_boundary and near(x[1], 15.0, tol)'},
-                           'Bottom'     : {'Mark': 2, 'Location':'on_boundary and near(x[1], -15.0, tol)'},
-                           'Inlet'      : {'Mark': 3, 'Location':'on_boundary and x[0] < 0.0 + tol and not (between(x[0], (-0.6, 0.6)) and between(x[1], (-0.6, 0.6)))'},
-                           'Outlet'     : {'Mark': 4, 'Location':'on_boundary and near(x[0], 23.0, tol)'},
-                           'Cylinder'   : {'Mark': 5, 'Location':'on_boundary and between(x[0], (-0.6, 0.6)) and between(x[1], (-0.6, 0.6))'},
-                            }
+#     def __cylinder_26k(self,bc_type):
+#         return eval('self.__cylinder_'+bc_type+'()')
+                   
+#     def __cylinder_74k_sym_60ds_40us(self,bc_type):
+#         return eval('self.__cylinder_'+bc_type+'()')
+
+#%%
+# class BoundaryFormat:
+#     """
+#     boundaries of meshes for testing
+#     """
+#     def __init__(self):
+#         self.mesh_list=['cylinder_8k.xml','cylinder_13k.xml','cylinder_26k.xml','cylinder_74k_sym_60ds_40us.xml']
+
+#     def get_boundary(self,mesh_name='cylinder_26k.xml'):
+#         if mesh_name in self.mesh_list:
+#             return eval('self.__'+mesh_name[0:-4]+'()')
+#         else:
+#             raise ValueError('boundary type is not in the test list')
+    
+#     def __cylinder_8k(self):
+#         BoundaryLocations = {'Top'      : {'Mark': 1, 'Location':'on_boundary and near(x[1], 12.0, tol)'},
+#                            'Bottom'     : {'Mark': 2, 'Location':'on_boundary and near(x[1], -12.0, tol)'},
+#                            'Inlet'      : {'Mark': 3, 'Location':'on_boundary and x[0] < 0.0 + tol and not (between(x[0], (-0.6, 0.6)) and between(x[1], (-0.6, 0.6)))'},
+#                            'Outlet'     : {'Mark': 4, 'Location':'on_boundary and near(x[0], 20.0, tol)'},
+#                            'Cylinder'   : {'Mark': 5, 'Location':'on_boundary and between(x[0], (-0.6, 0.6)) and between(x[1], (-0.6, 0.6))'},
+#                             }
+#         return BoundaryLocations
+                   
+#     def __cylinder_13k(self):
+#         BoundaryLocations = {'Top'      : {'Mark': 1, 'Location':'on_boundary and near(x[1], 15.0, tol)'},
+#                            'Bottom'     : {'Mark': 2, 'Location':'on_boundary and near(x[1], -15.0, tol)'},
+#                            'Inlet'      : {'Mark': 3, 'Location':'on_boundary and x[0] < 0.0 + tol and not (between(x[0], (-0.6, 0.6)) and between(x[1], (-0.6, 0.6)))'},
+#                            'Outlet'     : {'Mark': 4, 'Location':'on_boundary and near(x[0], 23.0, tol)'},
+#                            'Cylinder'   : {'Mark': 5, 'Location':'on_boundary and between(x[0], (-0.6, 0.6)) and between(x[1], (-0.6, 0.6))'},
+#                            }
+#         return BoundaryLocations
+            
+#     def __cylinder_26k(self):
+#         BoundaryLocations = {'Top'      : {'Mark': 1, 'Location':'on_boundary and near(x[1], 15.0, tol)'},
+#                            'Bottom'     : {'Mark': 2, 'Location':'on_boundary and near(x[1], -15.0, tol)'},
+#                            'Inlet'      : {'Mark': 3, 'Location':'on_boundary and x[0] < 0.0 + tol and not (between(x[0], (-0.6, 0.6)) and between(x[1], (-0.6, 0.6)))'},
+#                            'Outlet'     : {'Mark': 4, 'Location':'on_boundary and near(x[0], 23.0, tol)'},
+#                            'Cylinder'   : {'Mark': 5, 'Location':'on_boundary and between(x[0], (-0.6, 0.6)) and between(x[1], (-0.6, 0.6))'},
+#                             }
                             
-        return BoundaryLocations
+#         return BoundaryLocations
                    
-    def __cylinder_74k_sym_60ds_40us(self):
-        BoundaryLocations = {'Top'      : {'Mark': 1, 'Location':'on_boundary and near(x[1], 40.0, tol)'},
-                           'Bottom'     : {'Mark': 2, 'Location':'on_boundary and near(x[1], -40.0, tol)'},
-                           'Inlet'      : {'Mark': 3, 'Location':'on_boundary and near(x[0], -60.0, tol)'},
-                           'Outlet'     : {'Mark': 4, 'Location':'on_boundary and near(x[0], 60.0, tol)'},
-                           'Cylinder'   : {'Mark': 5, 'Location':'on_boundary and between(x[0], (-0.6, 0.6)) and between(x[1], (-0.6, 0.6))'},
-                           }
+#     def __cylinder_74k_sym_60ds_40us(self):
+#         BoundaryLocations = {'Top'      : {'Mark': 1, 'Location':'on_boundary and near(x[1], 40.0, tol)'},
+#                            'Bottom'     : {'Mark': 2, 'Location':'on_boundary and near(x[1], -40.0, tol)'},
+#                            'Inlet'      : {'Mark': 3, 'Location':'on_boundary and near(x[0], -60.0, tol)'},
+#                            'Outlet'     : {'Mark': 4, 'Location':'on_boundary and near(x[0], 60.0, tol)'},
+#                            'Cylinder'   : {'Mark': 5, 'Location':'on_boundary and between(x[0], (-0.6, 0.6)) and between(x[1], (-0.6, 0.6))'},
+#                            }
                            
-        return BoundaryLocations
+#         return BoundaryLocations
