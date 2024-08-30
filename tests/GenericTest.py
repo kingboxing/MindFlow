@@ -1,57 +1,49 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Tue Oct 17 21:47:22 2023
+from dolfin import *
+import numpy as np
 
-@author: bojin
-"""
-from context import *
+ # Define mesh
+mesh = UnitSquareMesh(10, 10)
+value=1.0
+# Define mixed element (e.g., scalar and vector element)
+P1 = FiniteElement('P', triangle, 1)  # Scalar element
+P2 = VectorElement('P', triangle, 1)  # Vector element
+mixed_element = MixedElement([P1, P2])
 
-print('------------ Testing base flow function ------------')
-start_time = time.time()
-mesh=Mesh("./data/mesh/cylinder_26k.xml")
-element=TaylorHood(mesh=mesh,order=(2,1))
-# store boundary locations and conditions in two dicts
-BoundaryLocations = {'Top'      : {'Mark': 1, 'Location':'on_boundary and near(x[1], 15.0, tol)'},
-                   'Bottom'     : {'Mark': 2, 'Location':'on_boundary and near(x[1], -15.0, tol)'},
-                   'Inlet'      : {'Mark': 3, 'Location':'on_boundary and x[0] < 0.0 + tol and not (between(x[0], (-0.5, 0.5)) and between(x[1], (-0.5, 0.5)))'},
-                   'Outlet'     : {'Mark': 4, 'Location':'on_boundary and near(x[0], 23.0, tol)'},
-                   'Cylinder'   : {'Mark': 5, 'Location':'on_boundary and between(x[0], (-0.5, 0.5)) and between(x[1], (-0.5, 0.5))'},
-                   }
-BoundaryConditions = {'Top'   : {'FunctionSpace': 'V.sub(0).sub(1)',   'Value': Constant(0.0)},
-                    'Bottom'  : {'FunctionSpace': 'V.sub(0).sub(1)',   'Value': Constant(0.0)},
-                    'Inlet'   : {'FunctionSpace': 'V.sub(0)',          'Value': Constant((1.0,0.0))},
-                    'Cylinder': {'FunctionSpace': 'V.sub(0)',          'Value': Constant((0.0,0.0))},
-                    'Outlet'  : {'Value': 'FreeOutlet'}
-                    }
 
-# initialise solver
-solver = NewtonSolver(mesh=mesh, order=(2,1))
-# set solver parameters
-solver.parameters({'newton_solver':{'linear_solver': 'mumps','absolute_tolerance': 1e-12, 'relative_tolerance': 1e-12}})
-# mark boundary
-for key in BoundaryLocations.keys():
-     solver.set_boundary(location=BoundaryLocations[key]['Location'], mark=BoundaryLocations[key]['Mark'])
-# set boundary conditions
-for key in BoundaryConditions.keys():
-    solver.set_boundarycondition(BoundaryConditions[key], BoundaryLocations[key]['Mark'])
 
-# solve for Re=80
-Re=80
-# solve the problem
-solver.solve(Re)
+# Specify coordinates and subspace index
+point_coordinates = (0.2, 0.8)
+subspace_index = 0  # Apply to the first subspace (scalar component)
 
-# compare results
-datapath='./data/baseflow/bf_newton_cylinder_26k_re080'
-data = TimeSeries(datapath)
-data.retrieve(element.w.vector(), 0.0)
-# print norm-inf
-norm2=np.linalg.norm((element.w.vector()-solver.w.vector()).get_local(), ord=np.inf)
+# Apply the point source
+# Create the mixed function space
+V = FunctionSpace(mesh, mixed_element)
 
-elapsed_time = time.time() - start_time
-# print results
-print('Results are printed as follows : ')
-print('Re = %d     Error_2norm = %e     drag = %e    lift = %e' % (Re, norm2, solver.get_force(bodymark=5,direction=0) , solver.get_force(bodymark=5,direction=1)))
 
-print('Elapsed Time = %e' % (elapsed_time))
-print('------------ Testing completed ------------')
+# Create the function in the mixed space
+u = Function(V)
+
+dofs_coor = V.tabulate_dof_coordinates()#.reshape((-1, 2))
+dofs_sub = V.sub(0).dofmap().dofs() # index of subsapce in dofs_coor 
+vertex_coords = dofs_coor[dofs_sub, :]
+
+# Convert the point coordinates to a Point object
+point = Point(*point_coordinates)
+closest_vertex_index = dofs_sub[np.argmin([point.distance(Point(*vertex)) for vertex in vertex_coords])]
+
+coord_clo=dofs_coor[closest_vertex_index]
+# Set the value at the closest vertex in the specified subspace
+u.vector()[closest_vertex_index] = value
+
+
+
+
+
+# Print the results for each subspace
+print("Scalar component (subspace 0):", u.sub(0).vector().get_local())
+print("Vector component (subspace 1):", u.sub(1).vector().get_local())
+
+# Optionally, visualize the scalar and vector components
+import matplotlib.pyplot as plt
+plot(u.sub(0), title="Scalar component")
+plt.show()

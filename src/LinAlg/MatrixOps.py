@@ -11,7 +11,6 @@ This module provides functions for matrix/vector conversion, assembling linear o
 """
 
 from src.Deps import *
-import inspect
 from petsc4py import PETSc
 from scikits import umfpack
 
@@ -196,6 +195,7 @@ class SparseLUSolver:
         self.isreal = not np.issubdtype(self.dtype, np.complexfloating) 
         self.operator=self._check_mtx(A)
         
+    @staticmethod  
     def _check_mtx(self, A):
         """
         Validate and prepare the matrix for LU factorization.
@@ -223,7 +223,8 @@ class SparseLUSolver:
             raise TypeError("Matrix data should be double precision. Use .astype() if necessary.")#or set linsolve.useUmfpack = False 
         
         return A
-            
+    
+    @staticmethod
     def _check_vec(self, b):
         """
         Validate and prepare the vector for solving.

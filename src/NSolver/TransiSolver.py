@@ -102,22 +102,22 @@ class DNS_Newton(NewtonSolver):
         None.
 
         """
-        mark=0
+        rebuild=False
         
         if dt is not None and dt != self.eqn.dt:
             self.eqn.dt = dt
-            mark = 1
+            rebuild = True
         
         if Re is not None and Re != self.eqn.Re:
             self.eqn.Re = Re
-            mark = 1
+            rebuild = True
             
         if time_expr != self.eqn.time_expr:
             self.eqn.time_expr = time_expr
-            mark = 1
+            rebuild = True
 
     
-        if mark == 1 or self.nstep == 0:
+        if rebuild or self.nstep == 0:
             self.__SNSEqn()
             self.SNS+=self.Transient
             self.__NewtonMethod()
@@ -172,7 +172,9 @@ class DNS_IPCS(NSolverBase):
         self.has_free_bc = False
         self.bc_reset=False
         self.nstep = 0
-        
+        #
+        self.param['solver_type']='IPCS_solver'
+        self.param['IPCS_solver']={}
         
         
     def initial(self, ic=None, noise=False, timestamp=0.0, element_init=None):
@@ -362,7 +364,7 @@ class DNS_IPCS(NSolverBase):
             #solver_outlet.set_operator(LHS_mat)
             solver_outlet.parameters.add('reuse_factorization', True)
             # mat for set BC values
-            BC_outlet=DirichletBC(self.element.functionspace_Q, Constant(0.0) , self.boundary.boundaries, mark,method="geometric")
+            BC_outlet=DirichletBC(self.element.functionspace_Q, Constant(0.0) , self.boundary.boundary, mark,method="geometric")
             MatBC_outlet = assemble(Constant(0.0)*dot(p, q) * dx) ## create a zero mat with pressure field size
             BC_outlet.apply(MatBC_outlet)
             

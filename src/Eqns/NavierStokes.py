@@ -249,6 +249,7 @@ class Incompressible:
             imag part, frequency.
 
         """
+        self.s = s
         omega = np.imag(s)
         sigma = np.real(s)
         

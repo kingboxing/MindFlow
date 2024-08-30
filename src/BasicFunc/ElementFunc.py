@@ -78,7 +78,9 @@ class TaylorHood:
          and Functions w = (u, p)
 
         """
-        (self.v, self.q) = TestFunctions(self.functionspace)
+        self.tew = TestFunction(self.functionspace)
+        (self.v, self.q) = split(self.tew)
+        
         self.tw = TrialFunction(self.functionspace)
         (self.tu, self.tp) = split(self.tw)
         
@@ -89,6 +91,19 @@ class TaylorHood:
         return Function(self.functionspace)
 
 #%%
+
+class combine_func:
+    def __init__(self, func_space1, func_space2):
+        self._func_space = (func_space1, func_space2)
+    
+    def sub(self, ind):
+        return self._func_space[ind]
+    
+    def num_sub_spaces(self):
+        return len(a)
+    
+    def dim(self):
+        return (self._func_space[0].dim(),self._func_space[1].dim())
 
 class Decoupled:
     """
@@ -134,6 +149,7 @@ class Decoupled:
         """
         self.functionspace_V = VectorFunctionSpace(self.mesh, 'P', self.order[0],dim=self.dimension, constrained_domain=self.constrained_domain[0])
         self.functionspace_Q = FunctionSpace(self.mesh, 'P', self.order[1], constrained_domain=self.constrained_domain[1])
+        self.functionspace = combine_func(self.functionspace_V, self.functionspace_Q)
         info("Dimension of the function space: Vel: %g    Pre: %g" % (self.functionspace_V.dim(),self.functionspace_Q.dim()))
 
     def set_function(self):
@@ -144,6 +160,7 @@ class Decoupled:
         """
         self.v = TestFunction(self.functionspace_V)
         self.q = TestFunction(self.functionspace_Q)
+        self.tew = (self.v, self.q)
 
         self.tu = TrialFunction(self.functionspace_V)
         self.tp = TrialFunction(self.functionspace_Q)
@@ -155,7 +172,6 @@ class Decoupled:
 
     def add_functions(self):
         return Function(self.functionspace_V), Function(self.functionspace_Q)
-
 #%%
 
 class PoissonPR:

@@ -120,14 +120,24 @@ class NSolverBase:
             DESCRIPTION.
 
         """
-        force=self.eqn.force_expr()
+        force_expr=self.eqn.force_expr()
+        dim = self.element.dimension
         
-        drag1 = assemble((force[0][0]) * self.eqn.ds(mark))
-        drag2 = assemble((force[1][0]) * self.eqn.ds(mark))
-        lift1 = assemble((force[0][1]) * self.eqn.ds(mark))
-        lift2 = assemble((force[1][1]) * self.eqn.ds(mark))
+        force = ()
+        for i in range(dim):
+            temp = (assemble((force_expr[0][i]) * self.eqn.ds(mark)), assemble((force_expr[1][i]) * self.eqn.ds(mark)))
+            force += (temp,) 
+            
+            
+        return force # 1st index for direction, 2nd index for component
         
-        return ((drag1, drag2),(lift1, lift2))
+        # drag1 = assemble((force[0][0]) * self.eqn.ds(mark))
+        # drag2 = assemble((force[1][0]) * self.eqn.ds(mark))
+        
+        # lift1 = assemble((force[0][1]) * self.eqn.ds(mark))
+        # lift2 = assemble((force[1][1]) * self.eqn.ds(mark))
+        
+        # return ((drag1, drag2),(lift1, lift2))
     
     def __vorticity_expr(self):
         """
@@ -194,7 +204,7 @@ class NSolverBase:
         return self.vorticity[0]
 
         
-    def eval_force(self, mark=None, dirc=None, comp=None,reuse=False):
+    def eval_force(self, mark=None, dirc=None, comp=None,reuse=True):
         """
         evaluate the force on the body (lift or drag)
 
@@ -208,7 +218,7 @@ class NSolverBase:
             0 means pressure part, 1 means stress part, None means the summation
             The default is None.
         reuse : bool
-            if re-assemble the force expression. The default is False.
+            if re-assemble the force expression. The default is True.
 
         Returns
         -------
@@ -218,7 +228,7 @@ class NSolverBase:
         """
 
         # force act on the body
-        if reuse is False:
+        if reuse is False or not hasattr(self, 'force'):
             self.force = self.__force_expr(mark)
         
         if self.element.type == 'TaylorHood':

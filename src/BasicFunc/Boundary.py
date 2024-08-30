@@ -18,7 +18,7 @@ class BoundaryCondition:
     Select Boundary Condition
     """
     def __init__(self, element):
-        self.bc_list={}
+        self.bc_list={} # a dict of BCs
         self.element=element
     def VelocityInlet(self, mark, vel):
         """
@@ -226,7 +226,7 @@ class SetBoundary(SubDomain, BoundaryCondition):
 
     Attributes
     -------------------
-    boundaries : FacetFunction with marked boundaries on given mesh
+    boundary : FacetFunction with marked boundary on given mesh
 
     Examples
     -------------------
@@ -244,13 +244,13 @@ class SetBoundary(SubDomain, BoundaryCondition):
         BoundaryCondition.__init__(self, element)
         self.mark_all=mark_all
         self.mesh = mesh
-        self.boundaries = MeshFunction('size_t', mesh, mesh.topology().dim() - 1)#FacetFunction("size_t", self.mesh); using int to mark boundaries
-        self.boundaries.set_all(self.mark_all) # mark all facets as 0 
+        self.boundary = MeshFunction('size_t', mesh, mesh.topology().dim() - 1)#FacetFunction("size_t", self.mesh); using int to mark boundaries
+        self.boundary.set_all(self.mark_all) # mark all facets as 0 
                 
         # unused functionality
         self.submesh=BoundaryMesh(mesh, 'exterior') # boundary mesh with outward pointing normals 
-        self.subboundaries=MeshFunction('size_t', self.submesh, self.submesh.topology().dim())
-        self.subboundaries.set_all(self.mark_all)
+        self.subboundary=MeshFunction('size_t', self.submesh, self.submesh.topology().dim())
+        self.subboundary.set_all(self.mark_all)
 
     def inside(self, x, on_boundary):
         """
@@ -282,7 +282,7 @@ class SetBoundary(SubDomain, BoundaryCondition):
             info('Warning : The Mark Number of the Boundary is the Same as the Mesh Facets')
         else:
             self.option = location
-            self.mark(self.boundaries, mark)
+            self.mark(self.boundary, mark)
             try:
                 self.option = location.replace('on_boundary and ','')
             except:
@@ -291,7 +291,7 @@ class SetBoundary(SubDomain, BoundaryCondition):
                 pass
             
             # unused functionality
-            self.mark(self.subboundaries, mark)
+            self.mark(self.subboundary, mark)
 
     def get_measure(self):
         """
@@ -301,7 +301,7 @@ class SetBoundary(SubDomain, BoundaryCondition):
         --------------------
         ds : a Measure object with id of boundaries in the domain
         """
-        ds = Measure('ds', domain=self.mesh, subdomain_data=self.boundaries)
+        ds = Measure('ds', domain=self.mesh, subdomain_data=self.boundary)
         return ds
 
     def get_domain(self):
@@ -310,17 +310,17 @@ class SetBoundary(SubDomain, BoundaryCondition):
 
         Returns
         ---------------------
-        boundaries : FacetFunction with marked boundaries on given mesh
+        boundary : FacetFunction with marked boundary on given mesh
         """
-        return self.boundaries
+        return self.boundary
     
     # unused functionality
     def get_submeasure(self):
-        ds = Measure('ds', domain=self.submesh, subdomain_data=self.subboundaries)
+        ds = Measure('ds', domain=self.submesh, subdomain_data=self.subboundary)
         return ds
         
     def get_subdomain(self):
-        return self.subboundaries
+        return self.subboundary
     
 #%%
 """
@@ -335,14 +335,14 @@ class SetBoundaryCondition:
     -------------------
     Functionspace : a finite element function space
 
-    boundary : object Boundary()
-        the Boundary object with defined and marked boundaries
+    set_boundary : object SetBoundary()
+        the SetBoundary object with defined and marked boundaries
 
     Attributes
     -------------------
     functionspace : a finite element function space
 
-    boundaries : FacetFunction on given mesh
+    boundary : FacetFunction on given mesh
 
     bc_list : a list with boundary conditions
 
@@ -363,10 +363,11 @@ class SetBoundaryCondition:
     >>> bc.set_boundarycondition(boundarycondition, 1)
 
     """
-    def __init__(self, functionspace, boundary):
+    def __init__(self, functionspace, set_boundary):
         self.functionspace = functionspace # 
-        self.boundaries = boundary.get_domain() # Get the FacetFunction on given mesh
-        self.bc_list = []
+        self.set_boundary = set_boundary
+        self.boundary = set_boundary.get_domain() # Get the FacetFunction on given mesh
+        self.bc_list = [] # list of DirichletBC object
         self.has_free_bc=False
         
         self.v = TestFunction(self.functionspace)
@@ -376,7 +377,7 @@ class SetBoundaryCondition:
     def set_boundarycondition(self, bc_dict, mark):
         """
         Set a boundary condition using FEniCS function DirichletBC as
-            DirichletBC(self.functionspace.sub(0).sub(0), self.boundaries, mark)
+            DirichletBC(self.functionspace.sub(0).sub(0), self.boundary, mark)
 
         Parameters
         ------------------------
@@ -402,10 +403,10 @@ class SetBoundaryCondition:
                 index = bc_dict['FunctionSpace'].find('.') # find the index of the first dot
                 if bc_dict['FunctionSpace'][index] == '.': # if bc_dict applied to a subspace
                     bc = 'DirichletBC(self.functionspace' + bc_dict['FunctionSpace'][index:] \
-                        + ',' + "bc_dict['Value']" + ',' + 'self.boundaries' + ',' + 'mark, method="geometric")' 
+                        + ',' + "bc_dict['Value']" + ',' + 'self.boundary' + ',' + 'mark, method="geometric")' 
                 else: # bc_dict applied to functionspace
                     bc= 'DirichletBC(self.functionspace' +  ',' + "bc_dict['Value']" + ',' \
-                        + 'self.boundaries' + ',' + 'mark, method="geometric")'
+                        + 'self.boundary' + ',' + 'mark, method="geometric")'
                 self.bc_list.append(eval(bc)) # boundary condition added to the list bcs
         else:
             info('No Dirichlet Boundary Condition at Boundary % g' % mark)
@@ -414,7 +415,7 @@ class SetBoundaryCondition:
     
     def MatrixBC_rhs(self): # try with assemble module
         """
-        Matrix that contains only zeros in the rows which have Dirichlet boundary conditions
+        Matrix that contains only zeros in the rows which have Dirichlet boundary conditions and ones in other rows
         """
         I = assemble(Constant(0.0)*dot(self.u, self.v) * dx)
         I.ident_zeros()

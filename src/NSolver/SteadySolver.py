@@ -63,6 +63,7 @@ class NewtonSolver(NSolverBase):
         # boundary condition
         self.boundary_condition = SetBoundaryCondition(self.element.functionspace, self.boundary)
         # init param
+        self.param['solver_type']='newton_solver'
         self.param['newton_solver']={}
 
     def __SNSEqn(self):
