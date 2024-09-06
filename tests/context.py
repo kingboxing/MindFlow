@@ -19,3 +19,9 @@ from src.BasicFunc.Boundary import SetBoundary, SetBoundaryCondition, BoundaryCo
 from src.NSolver.SteadySolver import NewtonSolver
 from src.NSolver.TransiSolver import DNS_IPCS
 from src.FreqAnalys.FreqSolver import FrequencyResponse, VectorGenerator
+from src.FreqAnalys.EigenSolver import EigenAnalysis
+from src.FreqAnalys.ResolSolver import ResolventAnalysis
+
+import tracemalloc
+import psutil
+import time

@@ -10,247 +10,206 @@ from src.Deps import *
 
 class SetInitialCondition:
     """
-    
+    Set initial conditions for FEniCS simulations, with optional noise and support for parallel execution.
     """
     def __init__(self, flag, ic=None, fw=None, noise=False, timestamp=0.0, mesh=None, element_in = None, element_out = None):
         """
-        
+        Initialize the initial condition setup.
 
         Parameters
         ----------
-        flag : TYPE
-            DESCRIPTION.
-        ic : TYPE, optional
-            DESCRIPTION. The default is None.
-        fw : TYPE, optional
-            DESCRIPTION. The default is None.
-        noise : TYPE, optional
-            DESCRIPTION. The default is False.
-        timestamp : TYPE, optional
-            DESCRIPTION. The default is 0.0.
-        mesh : TYPE, optional
-            DESCRIPTION. The default is None.
-        element_in : TYPE, optional
-            DESCRIPTION. The default is None.
-        element_out : TYPE, optional
-            DESCRIPTION. The default is None.
-
-        Returns
-        -------
-        None.
-
+        flag : int
+            Determines the type of solver (0: steady, 1: transient, 2: IPCS solver).
+        ic : str or Function, optional
+            Initial condition, either as a file path or a FEniCS function. Default is None.
+        fw : Function or list of Functions, optional
+            The function(s) to which the initial condition is applied. Default is None.
+        noise : bool, float, or ndarray, optional
+            Noise to be added to the initial condition. Default is False (no noise).
+        timestamp : float, optional
+            Timestamp for retrieving the initial condition from a time series. Default is 0.0.
+        mesh : Mesh, optional
+            The mesh associated with the simulation. Required for parallel solvers. Default is None.
+        element_in : object, optional
+            The input element object (e.g., TaylorHood). Default is None.
+        element_out : object, optional
+            The output element object (e.g., TaylorHood). Default is None.
         """
-        if noise is not False and element_out is not None:
-            vec_noise=self.__setnoise(noise, element_out)
-        else:
-            vec_noise=None
-            
-        if ic is not None and fw is not None:
-
-            if flag == 0: # steady newton solver
-                self.__setfunc(ic, fw, timestamp)
-            if flag == 1: # transient newton solver
-                self.__setfunc(ic, fw, timestamp)
-                if vec_noise is not None:
-                    fw.vector()[:] += np.ascontiguousarray(vec_noise)
-            if flag == 2: # transient IPCS solver (MPI)
-                self.__setfunc_parallel(ic, fw, mesh, timestamp, element_in = element_in, element_out = element_out)
-                if vec_noise is not None:
-                    fw[0].vector()[:] += np.ascontiguousarray(vec_noise[0])
-                    fw[1].vector()[:] += np.ascontiguousarray(vec_noise[1])
+        vec_noise = self._set_noise(noise, element_out) if noise and element_out else None
+        
+        if ic and fw:
+            if flag in [0, 1]:# steady newton solver/transient newton solver
+                self._set_function(ic, fw, timestamp)
+                if flag == 1 and vec_noise:
+                    fw.vector()[:] += vec_noise
+            elif flag == 2: # transient IPCS solver (MPI)
+                self._set_function_parallel(ic, fw, mesh, timestamp, element_in = element_in, element_out = element_out)
+                if vec_noise:
+                    fw[0].vector()[:] += vec_noise[0]
+                    fw[1].vector()[:] += vec_noise[1]
     
-    def __readfile(self, path, fw, timestamp):
+    def _read_timeseries(self, path, fw, timestamp):
         """
-        
+        Read a time series file and apply it to the function.
 
         Parameters
         ----------
-        path : TYPE
-            DESCRIPTION.
-        fw : TYPE
-            DESCRIPTION.
-        timestamp : TYPE
-            DESCRIPTION.
-
-        Returns
-        -------
-        None.
-
+        path : str
+            Path to the time series file.
+        fw : Function
+            The function to apply the time series to.
+        timestamp : float
+            The timestamp to retrieve from the time series.
         """
+        
         timeseries_flow = TimeSeries(path)
         timeseries_flow.retrieve(fw.vector(), timestamp)
 #%%        
-    def __readfile_hdf5(self, hdf, fw, timestamp, label, mesh):
+    def _read_hdf5(self, hdf, fw, timestamp, label, mesh):
         """
-        pending
+        Read an HDF5 file and apply it to the function.
 
         Parameters
         ----------
-        hdf : TYPE
-            DESCRIPTION.
-        fw : TYPE
-            DESCRIPTION.
-        timestamp : TYPE
-            DESCRIPTION.
-        label : TYPE
-            DESCRIPTION.
-        mesh : TYPE
-            DESCRIPTION.
-
-        Returns
-        -------
-        None.
-
+        hdf : HDF5File
+            The HDF5 file to read from.
+        fw : Function
+            The function to apply the HDF5 data to.
+        timestamp : float
+            The timestamp to retrieve from the HDF5 file.
+        label : str
+            The label of the dataset in the HDF5 file.
+        mesh : Mesh
+            The mesh associated with the HDF5 file.
         """
-        time_bool = False
         for ts in range(hdf.attributes(label)['count']):
-            time_bool = (hdf.attributes(label+'/vector_' + str(ts))['timestamp'] == timestamp)
-            if time_bool:
-                print('Read vector_'+str(ts)+'as the initial condition')
-                hdf.read(fw, label+'/vector_' + str(ts))
-                break
-        if time_bool is False:
-            info('Initial Timestamp not found !!!')
+            if hdf.attributes(label + '/vector_' + str(ts))['timestamp'] == timestamp:
+                print(f'Read vector_{ts} as the initial condition')
+                hdf.read(fw, label + '/vector_' + str(ts))
+                return
+        info('Initial Timestamp not found!')
+        
 #%%
         
-    def __setfunc(self, ic, fw, timestamp=0.0):
+    def _set_function(self, ic, fw, timestamp=0.0):
         """
-        
+        Set the initial condition for a function.
 
         Parameters
         ----------
-        ic : TYPE
-            DESCRIPTION.
-        fw : TYPE
-            DESCRIPTION.
-        timestamp : TYPE
-            DESCRIPTION.
-
-        Returns
-        -------
-        None.
-
+        ic : str or Function
+            Initial condition, either as a file path or a FEniCS function.
+        fw : Function
+            The function to apply the initial condition to.
+        timestamp : float, optional
+            Timestamp for retrieving the initial condition from a time series. Default is 0.0.
         """
-        if type(ic) is type("path"):
-            self.__readfile(ic, fw, timestamp)
-        elif (type(ic) is function.function.Function) and (type(fw) is function.function.Function):
+        if isinstance(ic, str):
+            self._read_timeseries(ic, fw, timestamp)
+        elif isinstance(ic, function.function.Function) and isinstance(fw, function.function.Function):
             assign(fw, ic)
         else:
-            info("Wrong Format of Initial Conidtion (Please give a path or function)")
-            
+            info("Invalid initial condition format (expected path or function).")
+           
 #%%
-    def __setfunc_parallel(self, ic, fw, mesh, timestamp, element_in = None, element_out = None):
+    def _set_function_parallel(self, ic, fw, mesh, timestamp, element_in = None, element_out = None):
         """
-        for IPCS
+        Set the initial condition for a parallel IPCS solver.
 
         Parameters
         ----------
-        ic : TYPE
-            DESCRIPTION.
-        fw : TYPE
-            DESCRIPTION.
-        mesh : TYPE
-            DESCRIPTION.
-        timestamp : TYPE
-            DESCRIPTION.
-        element_in : TYPE, optional
-            DESCRIPTION. The default is None.
-        element_out : TYPE, optional
-            DESCRIPTION. The default is None.
-
-        Returns
-        -------
-        None.
-
+        ic : str or Function
+            Initial condition, either as a file path or a FEniCS function.
+        fw : list of Functions
+            The functions to apply the initial condition to.
+        mesh : Mesh
+            The mesh associated with the simulation.
+        timestamp : float
+            Timestamp for retrieving the initial condition. Default is 0.0.
+        element_in : object, optional
+            The input element object (e.g., TaylorHood). Default is None.
+        element_out : object, optional
+            The output element object (e.g., TaylorHood). Default is None.
         """
+        
         # set parallel in Decoupled element
-        if type(ic) is type("path"): # if a path is given
+        if isinstance(ic, str): # if a path is given
             hdf = HDF5File(mesh.mpi_comm(), ic+'.h5', 'r')
             if hdf.has_dataset('Velocity') and hdf.has_dataset('Pressure'): # stored in two datasets
-                self.__readfile_hdf5(hdf, fw[0], timestamp, 'Velocity', mesh)
-                self.__readfile_hdf5(hdf, fw[1], timestamp, 'Pressure', mesh)
+                self._read_hdf5(hdf, fw[0], timestamp, 'Velocity', mesh)
+                self._read_hdf5(hdf, fw[1], timestamp, 'Pressure', mesh)
             else:
                 if hdf.has_dataset('Coupled Field'):
                     hdf.rename(hdf.label(), 'Coupled Field')
-                    self.__readfile_hdf5(hdf, element_in.w, timestamp, 'Coupled Field', mesh)
+                    self._read_hdf5(hdf, element_in.w, timestamp, 'Coupled Field', mesh)
                 elif element_in.type == 'TaylorHood':
-                    self.__readfile(ic, element_in.w, timestamp)
-                    
+                    self._read_timeseries(ic, element_in.w, timestamp)  
                 assign(fw[0], element_in.w.sub(0))
                 assign(fw[1], element_in.w.sub(1))
                 
         elif element_in.type == element_out.type: # type is 'Decoupled', ic is a tuple
-            self.__setfunc(ic[0], fw[0])
-            self.__setfunc(ic[1], fw[1])
-            
+            self._set_function(ic[0], fw[0])
+            self._set_function(ic[1], fw[1])
         elif element_in.type == 'TaylorHood': # ic is a Function
-            self.__setfunc(ic.sub(0), fw[0])
-            self.__setfunc(ic.sub(1), fw[1])
+            self._set_function(ic.sub(0), fw[0])
+            self._set_function(ic.sub(1), fw[1])
 #%%
-    def __setnoise(self, noise, element_out):
+    def _set_noise(self, noise, element_out):
         """
-        
+        Generate noise to add to the initial condition.
 
         Parameters
         ----------
-        noise : TYPE
-            DESCRIPTION.
-        element_out : TYPE
-            DESCRIPTION.
+        noise : bool, float, or ndarray
+            The noise level or array to add.
+        element_out : object
+            The output element object (e.g., TaylorHood).
 
         Returns
         -------
-        vec_noise : TYPE
-            DESCRIPTION.
-
+        vec_noise : ndarray or tuple of ndarrays
+            The noise vector(s).
         """
+        
         vec_noise = None
         if element_out.type == 'TaylorHood':
-            if noise is True or type(noise) is float:
+            if noise is True or isinstance(noise, float):
                 pertub = (2 * np.random.rand(element_out.functionspace.dim()) - 1) * float(noise)
                 vec_noise = np.ascontiguousarray(pertub)
-            elif type(noise) is np.ndarray:
+            elif isinstance(noise, np.ndarray):
                 vec_noise = np.ascontiguousarray(noise)
             else:
-                info("Wrong Format of Initial Noise (Please give a float or np.ndarray)")
+                info("Invalid noise format (expected float or ndarray).")
                 
         elif element_out.type == 'Decoupled':
-            if noise is True or type(noise) is float: # if noise is np.random.rand 
+            if noise is True or isinstance(noise, float): # if noise is np.random.rand 
                 pertub_v = (2 * np.random.rand(element_out.functionspace_V.dim()) - 1) * float(noise)
                 vec_noise = (np.ascontiguousarray(pertub_v),)
                 pertub_q = (2 * np.random.rand(element_out.functionspace_Q.dim()) - 1) * float(noise)
                 vec_noise += (np.ascontiguousarray(pertub_q),)
-                
-            elif type(noise[0]) is np.ndarray and type(noise[1]) is np.ndarray: # if noise is np.ndarray
+            elif all(isinstance(n, np.ndarray) for n in noise): # if noise is np.ndarray
                 vec_noise = (np.ascontiguousarray(noise[0]),)
                 vec_noise += (np.ascontiguousarray(noise[1]),)
             else:
-                info("Wrong Format of Initial Noise (Please give a float or tuple of two np.ndarray)")
+                info("Invalid noise format (expected float or tuple of ndarrays).")
         else:
-            info("Unknow element type in initial noise setting")
+            info("Unknown element type in initial noise setting")
         return vec_noise
     
     def visit_hdf5(self, path):
         """
-        visit each attributes in hdf5 file
+        Visit and list all attributes in an HDF5 file.
 
         Parameters
         ----------
-        path : TYPE
-            DESCRIPTION.
-
-        Returns
-        -------
-        None.
-
+        path : str
+            Path to the HDF5 file.
         """
+        
         import h5py
         with h5py.File(path+'.h5', 'r') as h5file:
-            # List all the datasets in the file
-            def print_name(name):
-                print(name)
-    
-            h5file.visit(print_name)
+            # List all the datasets in the file    
+            h5file.visit(print)
           
 
 ## abandoned

@@ -11,8 +11,6 @@ This module provides functions for matrix/vector conversion, assembling linear o
 """
 
 from src.Deps import *
-from petsc4py import PETSc
-from scikits import umfpack
 
 #%%
 """
@@ -141,6 +139,21 @@ def AssembleVector(expr,bcs=[]):
     # convert to the numpy matrix
     return ConvertVector(b)
 
+def TransposePETScMat(A):
+    """
+    Transpose a FEniCS PETScMatrix and return the transposed matrix.
+
+    Parameters:
+    - A: A FEniCS PETScMatrix object.
+
+    Returns:
+    - A new PETScMatrix that is the transpose of the input matrix.
+    """
+    # Transpose the PETSc matrix
+    petsc_transposed = A.mat().transpose()
+    # Convert back to a FEniCS PETScMatrix
+    transposed_matrix = PETScMatrix(petsc_transposed)
+    return transposed_matrix
 #%%
 # Helper function for complex matrix handling
 
@@ -195,7 +208,6 @@ class SparseLUSolver:
         self.isreal = not np.issubdtype(self.dtype, np.complexfloating) 
         self.operator=self._check_mtx(A)
         
-    @staticmethod  
     def _check_mtx(self, A):
         """
         Validate and prepare the matrix for LU factorization.
@@ -224,7 +236,6 @@ class SparseLUSolver:
         
         return A
     
-    @staticmethod
     def _check_vec(self, b):
         """
         Validate and prepare the vector for solving.
@@ -780,22 +791,24 @@ class InverseMatrixOperator(spla.LinearOperator):
         
         
         if A_lu is not None:
-            if hasattr(A_lu, 'solve'):
-                A_lu=A_lu.solve # else assume A_lu is a solve method
+            self.A_lu = A_lu # if A_lu not None, create attribute 
 
             if hasattr(A_lu, 'stype'): # if A_lu has stype
                 if A_lu.stype in solver_map:
-                    return A_lu
+                    if hasattr(A_lu, 'solve'):
+                        return A_lu.solve
+                    else:# else assume A_lu is a solve method
+                        return A_lu
                 else:
                     raise ValueError(f"Undefined LU object solver type: {A_lu.stype}")
             else: # A_lu from other packages, need to define solve behavior
-                self.A_lu=A_lu
                 return self._solve
                 
         else:
             if lusolver not in solver_map:
                 raise ValueError(f"Undefined solver type: {lusolver}")
             solver_instance = solver_map[lusolver](A)
+            self.A_lu = solver_instance # if A_lu is None, return solve method
             return solver_instance.solve
             
         
@@ -842,8 +855,11 @@ class InverseMatrixOperator(spla.LinearOperator):
             DESCRIPTION.
 
         """
-        
-        A_lu = self.A_lu
+        if hasattr(self.A_lu, 'solve'):
+            A_lu = self.A_lu.solve # else assume A_lu is a solve method
+        else:
+            A_lu = self.A_lu
+            
         # assume A_lu can solve complex problems
         if trans=='N':
             if self.isreal and np.issubdtype(b.dtype, np.complexfloating):

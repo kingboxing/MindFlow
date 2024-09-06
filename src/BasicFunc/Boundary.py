@@ -15,231 +15,209 @@ defining and marking boundaries
 #%%
 class BoundaryCondition:
     """
-    Select Boundary Condition
+    A factory of boundary conditions for FEniCS simulations.
     """
     def __init__(self, element):
-        self.bc_list={} # a dict of BCs
-        self.element=element
-    def VelocityInlet(self, mark, vel):
+        """
+        Initialize the boundary condition manager.
+
+        Parameters
+        ----------
+        element : object
+            The finite element used in the simulation.
         """
         
+        self.bc_list={} # a dict of BCs
+        self.element=element
+        
+    def _validate_mark_and_value(self, mark, value, value_types=(tuple, function.function.Function, function.expression.Expression)):
+        """
+        Validate the mark and value parameters for boundary conditions.
 
         Parameters
         ----------
         mark : int
-            DESCRIPTION.
-        vel : tuple
-            DESCRIPTION.
+            The identifier for the boundary.
+        value : tuple, Function, or Expression
+            The value to apply at the boundary.
+        value_types : tuple, optional
+            Types that the value can be. Default is (tuple, Function, Expression).
 
+        Raises
+        ------
+        ValueError
+            If mark or value are not of the expected type.
+        """
+        if not isinstance(mark, int):
+            raise ValueError('Boundary mark must be an integer.')
+        if not isinstance(value, value_types):
+            raise ValueError(f'Value must be one of {value_types}.')
+        
+    def VelocityInlet(self, mark, vel):
+        """
+        Apply a velocity inlet boundary condition.
+
+        Parameters
+        ----------
+        mark : int
+            The identifier for the boundary.
+        vel : tuple, Function, or Expression
+            The velocity to apply at the boundary.
+            
         Returns
         -------
         None.
 
         """
-        if type(mark) is int:
-            if type(vel) is tuple:
-                self.bc_list[mark].update({'FunctionSpace': 'V', 'Value': Constant(vel), 'BoundaryTraction': None})
-            elif isinstance(vel, (function.function.Function, function.expression.Expression)):
-                self.bc_list[mark].update({'FunctionSpace': 'V', 'Value': vel, 'BoundaryTraction': None})
-            else:
-                raise ValueError('Parameter type error of velocity-inlet boundary condition')
-        else:
-            raise ValueError('Parameter type error of velocity-inlet boundary condition')
-        
-        if self.element.type=='TaylorHood':
-            self.bc_list[mark]['FunctionSpace']+='.sub(0)'
-            
+        self._validate_mark_and_value(mark, vel)
+        self.bc_list[mark].update({'FunctionSpace': 'V', 'Value': Constant(vel) if isinstance(vel, tuple) else vel, 'BoundaryTraction': None})
+
+        if self.element.type == 'TaylorHood':
+            self.bc_list[mark]['FunctionSpace'] += '.sub(0)'
          
     def SlipWall(self, mark, norm, vel=0.0):
         """
-        boundary parallel or normal to axis
+        Apply a slip wall boundary condition. 
+        Now only for boundary parallel or normal to axis
 
         Parameters
         ----------
-        mark : TYPE
-            DESCRIPTION.
-        norm : TYPE
-            positive vector normal to the boundary.
-
-        Raises
-        ------
-        ValueError
-            DESCRIPTION.
-
-        Returns
-        -------
-        None.
+        mark : int
+            The identifier for the boundary.
+        norm : tuple
+            A positive vector normal to the boundary.
+        vel : float, optional
+            The velocity across/normal the boundary. Default is 0.0.
 
         """
-        if type(mark) is int and type(norm) is tuple:
-            ind=str(norm.index(1))
-            self.bc_list[mark].update({'FunctionSpace': 'V.sub('+ind+')',   'Value': Constant(vel), 'BoundaryTraction': None})
-        else:
-            raise ValueError('Parameter type error of symmetry boundary condition')
-            
-        if self.element.type=='TaylorHood':
-            self.bc_list[mark]['FunctionSpace']=self.bc_list[mark]['FunctionSpace'].replace('V','V.sub(0)')
-            
+        self._validate_mark_and_value(mark, norm, value_types=(tuple,))
+        
+        ind = str(norm.index(1))
+        self.bc_list[mark].update({'FunctionSpace': f'V.sub({ind})', 'Value': Constant(vel), 'BoundaryTraction': None})
+
+        if self.element.type == 'TaylorHood':
+            self.bc_list[mark]['FunctionSpace'] = self.bc_list[mark]['FunctionSpace'].replace('V', 'V.sub(0)')
+
     
     def Symmetry(self, mark, norm):
         """
-        
+        Apply a symmetry boundary condition by reusing SlipWall.
 
         Parameters
         ----------
-        mark : TYPE
-            DESCRIPTION.
-        norm : TYPE
-            DESCRIPTION.
+        mark : int
+            The identifier for the boundary.
+        norm : tuple
+            A vector normal to the boundary.
 
         Returns
         -------
         None.
 
         """
-        if type(mark) is int and type(norm) is tuple:
-            self.SlipWall(mark, norm)
-        else:
-            raise ValueError('Parameter type error of slip wall boundary condition')
+        self.SlipWall(mark, norm)
     
     def NoSlipWall(self, mark):
         """
-        
+        Apply a no-slip wall boundary condition.
 
         Parameters
         ----------
-        mark : TYPE
-            DESCRIPTION.
-        dim : TYPE, optional
-            DESCRIPTION. The default is 2.
-
-        Raises
-        ------
-        ValueError
-            DESCRIPTION.
-
-        Returns
-        -------
-        None.
+        mark : int
+            The identifier for the boundary.
 
         """
-        vel=(0,)*self.element.dimension
-        
-        if type(mark) is int:
-            self.VelocityInlet(mark, vel)
-        else:
-            raise ValueError('Parameter type error of no-slip wall boundary condition')
+        vel=(0,)*self.element.dim
+        self.VelocityInlet(mark, vel)
     
     def FreeBoundary(self, mark):
         """
-        
+        Apply a free boundary condition (zero boundary traction).
 
         Parameters
         ----------
-        mark : TYPE
-            DESCRIPTION.
-
-        Raises
-        ------
-        ValueError
-            DESCRIPTION.
-
-        Returns
-        -------
-        None.
+        mark : int
+            The identifier for the boundary.
 
         """
-        if type(mark) is int:
-            self.bc_list[mark].update({'FunctionSpace': None,   'Value': 'Free Boundary', 'BoundaryTraction': None})
-        else:
-            raise ValueError('Parameter type error of free boundary condition')
+        self._validate_mark_and_value(mark, None, value_types=(type(None),))
+        
+        self.bc_list[mark].update({'FunctionSpace': None, 'Value': 'Free Boundary', 'BoundaryTraction': None})
     
     def PressureInlet(self, mark, pre, mode=1):
         """
-        pending for case
-
+        Apply a pressure inlet boundary condition.
+        pending for case testing ...
+        
         Parameters
         ----------
-        mark : TYPE
-            DESCRIPTION.
-        pre : TYPE
-            DESCRIPTION.
-        mode : TYPE, optional
-            DESCRIPTION. The default is 1.
+        mark : int
+            The identifier for the boundary.
+        pre : int, float, Function, or Expression
+            The pressure to apply at the boundary.
+        mode : int, optional
+            The mode of application. Default is 1.
 
-        Raises
-        ------
-        ValueError
-            DESCRIPTION.
-
-        Returns
-        -------
-        None.
 
         """
-        if isinstance(pre, (int, float)):
-            self.bc_list[mark].update({'FunctionSpace': 'Q',   'Value': Constant(pre), 'BoundaryTraction': (mark, mode)}) # mode 1 for BoundaryTraction 
-        elif isinstance(pre, (function.function.Function, function.expression.Expression)):
-            self.bc_list[mark].update({'FunctionSpace': 'Q',   'Value': pre, 'BoundaryTraction': mode})
-        else:
-            raise ValueError('Parameter type error of pressure inlet boundary condition')
+        self._validate_mark_and_value(mark, pre, value_types=(int, float, function.function.Function, function.expression.Expression))
+        
+        self.bc_list[mark].update({'FunctionSpace': 'Q', 'Value': Constant(pre) if isinstance(pre, (int, float)) else pre, 'BoundaryTraction': (mark, mode)})# mode 1 for BoundaryTraction 
 
-        if self.element.type=='TaylorHood':
-            self.bc_list[mark]['FunctionSpace']=self.bc_list[mark]['FunctionSpace'].replace('Q','Q.sub(1)')
-          
-
+        if self.element.type == 'TaylorHood':
+            self.bc_list[mark]['FunctionSpace'] = self.bc_list[mark]['FunctionSpace'].replace('Q', 'Q.sub(1)')
 
     def PressureOutlet(self, mark, pre, mode=1):
         """
-        pending for case
+        Apply a pressure outlet boundary condition using PressureInlet.
+        pending for case testing ...
 
         Parameters
         ----------
-        mark : TYPE
-            DESCRIPTION.
-        pre : TYPE
-            DESCRIPTION.
-        mode : TYPE, optional
-            DESCRIPTION. The default is 1.
+        mark : int
+            The identifier for the boundary.
+        pre : int, float, Function, or Expression
+            The pressure to apply at the boundary.
+        mode : int, optional
+            The mode of Boundary Traction type. Default is 1.
 
         Returns
         -------
         None.
 
         """
-        if isinstance(pre, (int, float,function.function.Function, function.expression.Expression)):
-            self.PressureInlet(mark, pre, mode=mode)
-        else:
-            raise ValueError('Parameter type error of pressure outlet boundary condition')
+        self.PressureInlet(mark, pre, mode)
+
 #%%
 
 class SetBoundary(SubDomain, BoundaryCondition):
     """
-    A subclass of SubDomain for defining and marking a boundary
-
-    Parameters
-    -------------------
-    mesh : object created by FEniCS function Mesh
-
-    mark : int
-        Initial mark of the whole domain, default : 0
+    A subclass of SubDomain for defining and marking a boundary.
 
     Attributes
     -------------------
     boundary : FacetFunction with marked boundary on given mesh
 
-    Examples
-    -------------------
-    >>> from MindFlow.BasicFunc.Boundary import SetBoundary
-    >>> from dolfin import *
-    >>> mesh = Mesh("mesh.xml")
-    >>> BoundaryLocation = 'on_boundary and near(x[0], 0.0, tol)'
-    >>> boundary=SetBoundary(mesh)
-    >>> boundary.set_boundary(location = BoundaryLocations, mark = 1)
-
     """
 
     def __init__(self, mesh, element, mark_all=0):
+        """
+        Initialize 
+        
+        Parameters
+        ----------
+        mesh : object created by FEniCS function Mesh
+            DESCRIPTION.
+        element : object
+            The finite element used in the simulation.
+        mark_all : int, optional
+            Initial mark of the whole domain. The default is 0.
+
+        Returns
+        -------
+        None.
+
+        """
         SubDomain.__init__(self) # initialize base class
         BoundaryCondition.__init__(self, element)
         self.mark_all=mark_all
@@ -254,27 +232,35 @@ class SetBoundary(SubDomain, BoundaryCondition):
 
     def inside(self, x, on_boundary):
         """
-        Function that returns True for points that belong to the boundary
-        and False for points that don't belong to the boundary.
+        Determine if a point is inside the boundary.
+
+        Parameters
+        ----------
+        x : array-like
+            Coordinates of the point.
+        on_boundary : bool
+            Whether the point is on the boundary.
+
+        Returns
+        -------
+        bool
+            True if the point is inside the boundary, False otherwise.
         """
         tol = self.tol
         return eval(self.option)
 
     def set_boundary(self, location, mark, tol=1e-10):
         """
-        Function to define and mark the boundary
+        Define and mark the boundary.
 
         Parameters
-        ------------------
-        location: string
-            Indicate the location of the boundary
-
-        mark: int
-            The number that represents the boundary
-
-        tol: float
-            Tolerance while find the boundary, default : 1e-10
-
+        ----------
+        location : str
+            The location of the boundary.
+        mark : int
+            The identifier for the boundary.
+        tol : float, optional
+            Tolerance for boundary location. Default is 1e-10.
         """
 
         self.tol = tol
@@ -287,9 +273,7 @@ class SetBoundary(SubDomain, BoundaryCondition):
                 self.option = location.replace('on_boundary and ','')
             except:
                 self.option = location.replace(' and on_boundary','')
-            else:
-                pass
-            
+
             # unused functionality
             self.mark(self.subboundary, mark)
 
@@ -298,8 +282,9 @@ class SetBoundary(SubDomain, BoundaryCondition):
         Get the measure object of the domain
 
         Returns
-        --------------------
-        ds : a Measure object with id of boundaries in the domain
+        -------
+        Measure
+            A Measure object with IDs of boundaries in the domain.
         """
         ds = Measure('ds', domain=self.mesh, subdomain_data=self.boundary)
         return ds
@@ -346,87 +331,119 @@ class SetBoundaryCondition:
 
     bc_list : a list with boundary conditions
 
-    Examples
-    -------------------
-    >>> from MindFlow.BasicFunc.Boundary import SetBoundary, SetBoundaryCondition
-    >>> from dolfin import *
-    >>> mesh = Mesh("mesh.xml")
-    >>> P2 = VectorElement("Lagrange", mesh.ufl_cell(), 2)
-    >>> P1 = FiniteElement("Lagrange", mesh.ufl_cell(), 1)
-    >>> TH = MixedElement([P2, P1])
-    >>> V = FunctionSpace(mesh, TH)
-    >>> boundarylocation = 'on_boundary and near(x[0], 0.0, tol)'
-    >>> boundarycondition = {'FunctionSpace': 'V.sub(0).sub(0)', 'Value': Constant(0.0)}
-    >>> boundary=SetBoundary(mesh)
-    >>> boundary.set_boundary(location = boundarylocations, mark = 1)
-    >>> bc = SetBoundaryCondition(functionspace=V, boundary=boundary)
-    >>> bc.set_boundarycondition(boundarycondition, 1)
 
     """
     def __init__(self, functionspace, set_boundary):
+        """
+        Initialise
+
+        Parameters
+        ----------
+        functionspace : FunctionSpace
+            a finite element function space.
+        set_boundary : SetBoundary
+            SetBoundary object with defined and marked boundaries.
+
+        Returns
+        -------
+        None.
+
+        """
         self.functionspace = functionspace # 
         self.set_boundary = set_boundary
         self.boundary = set_boundary.get_domain() # Get the FacetFunction on given mesh
         self.bc_list = [] # list of DirichletBC object
         self.has_free_bc=False
         
+        #
         self.v = TestFunction(self.functionspace)
         self.u = TrialFunction(self.functionspace)
         self.func = Function(self.functionspace)
         
     def set_boundarycondition(self, bc_dict, mark):
         """
-        Set a boundary condition using FEniCS function DirichletBC as
+        Set a boundary condition using FEniCS' DirichletBC as
             DirichletBC(self.functionspace.sub(0).sub(0), self.boundary, mark)
-
+        
         Parameters
         ------------------------
         bc_dict: dict
-            At least two keys : 'FunctionSpace' and 'Value', which respectively
-            indicate the location and the value of the boundary condition
-
+            Contains 'FunctionSpace' and 'Value' keys.
+            which respectively indicate the subspace and the value of the boundary condition
         mark: int
-            ID of the boundary
+            The identifier for the boundary.
 
         """
-        if 'Value' not in bc_dict:
-            if 'FunctionSpace' not in bc_dict:
-                info('Please specify the FunctionSpace and Value of the Dirichlet Boundary Condition Applied at Boundary % g' % mark)
-            else:
-                info('Please specify the Value of the Dirichlet Boundary Condition Applied at Boundary % g' % mark)
-        elif bc_dict['Value'] in ['Free Boundary']:
-            info('Free boundary condition (zero boundary traction) applied at Boundary % g' % mark)
+        if 'FunctionSpace' not in bc_dict or 'Value' not in bc_dict:
+            raise ValueError(f'Missing FunctionSpace/Value for boundary {mark}')
+        
+        if bc_dict['Value'] in ['Free Boundary']: # if free bc, then do nothing
+            info(f'Free boundary condition (zero boundary traction) applied at boundary {mark}')
             self.has_free_bc+=1
-        elif 'FunctionSpace' not in bc_dict:
-            info('Please specify the FunctionSpace of the Dirichlet Boundary Condition Applied at Boundary % g' % mark)
-        elif bc_dict['FunctionSpace'] is not None and bc_dict['Value'] is not None:
-                index = bc_dict['FunctionSpace'].find('.') # find the index of the first dot
-                if bc_dict['FunctionSpace'][index] == '.': # if bc_dict applied to a subspace
-                    bc = 'DirichletBC(self.functionspace' + bc_dict['FunctionSpace'][index:] \
-                        + ',' + "bc_dict['Value']" + ',' + 'self.boundary' + ',' + 'mark, method="geometric")' 
-                else: # bc_dict applied to functionspace
-                    bc= 'DirichletBC(self.functionspace' +  ',' + "bc_dict['Value']" + ',' \
-                        + 'self.boundary' + ',' + 'mark, method="geometric")'
-                self.bc_list.append(eval(bc)) # boundary condition added to the list bcs
-        else:
+            return
+        
+        function_space_str = bc_dict['FunctionSpace'] # FunctionSpace
+        value = "bc_dict['Value']" # Value in str
+        if function_space_str is None or value is None:
             info('No Dirichlet Boundary Condition at Boundary % g' % mark)
+            return
+        
+         # start apply DirichletBC
+        index = function_space_str.find('.') # if FunctionSpace is a subspace
+        if function_space_str[index] == '.': # if bc_dict applied to a subspace
+            sub_function_space=function_space_str[index:]
+        else: # bc_dict directly applied to functionspace
+            sub_function_space=''
+        
+        func = f"DirichletBC(self.functionspace{sub_function_space}, {value}, self.boundary, mark, method='geometric')"
+        self.bc_list.append(eval(func)) # boundary condition added to the list bcs
+
+
+        # if 'Value' not in bc_dict:
+        #     if 'FunctionSpace' not in bc_dict:
+        #         info('Please specify the FunctionSpace and Value of the Dirichlet Boundary Condition Applied at Boundary % g' % mark)
+        #     else:
+        #         info('Please specify the Value of the Dirichlet Boundary Condition Applied at Boundary % g' % mark)
+        # elif bc_dict['Value'] in ['Free Boundary']:
+        #     info('Free boundary condition (zero boundary traction) applied at Boundary % g' % mark)
+        #     self.has_free_bc+=1
+        # elif 'FunctionSpace' not in bc_dict:
+        #     info('Please specify the FunctionSpace of the Dirichlet Boundary Condition Applied at Boundary % g' % mark)
+        # elif bc_dict['FunctionSpace'] is not None and bc_dict['Value'] is not None:
+        #         index = bc_dict['FunctionSpace'].find('.') # find the index of the first dot
+        #         if bc_dict['FunctionSpace'][index] == '.': # if bc_dict applied to a subspace
+        #             bc = 'DirichletBC(self.functionspace' + bc_dict['FunctionSpace'][index:] \
+        #                 + ',' + "bc_dict['Value']" + ',' + 'self.boundary' + ',' + 'mark, method="geometric")' 
+        #         else: # bc_dict applied to functionspace
+        #             bc= 'DirichletBC(self.functionspace' +  ',' + "bc_dict['Value']" + ',' \
+        #                 + 'self.boundary' + ',' + 'mark, method="geometric")'
+        #         self.bc_list.append(eval(bc)) # boundary condition added to the list bcs
+        # else:
+        #     info('No Dirichlet Boundary Condition at Boundary % g' % mark)
 
         # deal with 'FreeOutlet' BC
     
     def MatrixBC_rhs(self): # try with assemble module
         """
-        Matrix that contains only zeros in the rows which have Dirichlet boundary conditions and ones in other rows
+        Create a matrix with zeros in rows that have Dirichlet boundary conditions and ones in diagonal elsewhere.
+        Returns
+        -------
+        PETScMatrix
+            A matrix with applied boundary conditions.
         """
         I = assemble(Constant(0.0)*dot(self.u, self.v) * dx)
         I.ident_zeros()
         Mat_bc = assemble(Constant(0.0)*dot(self.u, self.v) * dx)
         [bc.apply(Mat_bc) for bc in self.bc_list]
-        Mat = I - Mat_bc
-        return Mat
+        return I - Mat_bc
     
     def VectorBC_rhs(self): 
         """
-        Vector that contains boundary condition values in the rows which have Dirichlet boundary conditions
+        Create a vector with BC values in rows that have Dirichlet boundary conditions.
+        Returns
+        -------
+        PETScVector
+            A vector with applied boundary conditions.
         """        
         Vec_bc = assemble(Constant(0.0)*dot(self.func, self.v) * dx)
         [bc.apply(Vec_bc) for bc in self.bc_list]

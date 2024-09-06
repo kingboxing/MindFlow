@@ -11,24 +11,119 @@ from src.Deps import *
 """
 This module provides classes that define different finite elements
 """
-
-
-class TaylorHood:
+class FiniteElementBase:
     """
-    N-D TaylorHood finite element
-    Default: Second order for the velocity vector space and first
-    order for the pressure space
+    Base class for different finite elements used in FEniCS.
 
-    Parameters
-    ----------------------
-    mesh : object created by FEniCS function Mesh
-        mesh of the flow field
+    This class defines common attributes and methods shared by different finite elements.
+    """
+
+    def __init__(self, mesh=None, dim=2, order=(2, 1), constrained_domain=None):
+        """
+        Initialize the finite element base class.
+
+        Parameters
+        ----------
+        mesh : Mesh, optional
+            Object created by FEniCS function Mesh. The default is None.
+        dim : int, float, optional
+            Dimension of the flow field. The default is 2.
+        order : tuple, optional
+            Order/degree of the element. The default is (2, 1).
+        constrained_domain : Sub_Domain, optional
+            Constrained subdomain with map function in FEniCS (for periodic condition). The default is None.
+        """
+        self.mesh = mesh
+        self.dim = int(dim)
+        self.order = order
+        self.constrained_domain = constrained_domain
+        self.functionspace = None
+
+    def set_functionspace(self):
+        """
+        Abstract method to create the function space.
+        """
+        raise NotImplementedError("This method should be implemented by subclasses.")
+
+    def set_function(self):
+        """
+        Create TestFunctions, TrialFunctions, and Functions.
+        """
+        self.tew = TestFunction(self.functionspace)
+        self.tw = TrialFunction(self.functionspace)
+        self.w = Function(self.functionspace)
+
+
+class combine_func:
+    """
+    Combine two separate function spaces.
+    """
+    def __init__(self, func_space1, func_space2):
+        """
+        combine two seperate function space
+
+        Parameters
+        ----------
+        func_space1 : function space
+            function space.
+        func_space2 : function space
+            function space.
+
+        """
+        self._func_space = (func_space1, func_space2)
+    
+    def sub(self, ind):
+        """
+        Access a subspace.
+
+        Parameters
+        ----------
+        ind : int
+            Index of the subspace.
+
+        Returns
+        -------
+        FunctionSpace
+            The selected sub-function space.
+
+        """
+        return self._func_space[ind]
+    
+    def num_sub_spaces(self):
+        """
+        Return the number of subspaces.
+
+        Returns
+        -------
+        int
+            Number of subspaces.
+        """
+        return len(self._func_space)
+    
+    def dim(self):
+        """
+        Return the dimensions of the combined function spaces.
+
+        Returns
+        -------
+        tuple
+            Dimensions of the two function spaces.
+        """
+        return (self._func_space[0].dim(), self._func_space[1].dim())
+
+#%%
+class TaylorHood(FiniteElementBase):
+    """
+    N-D TaylorHood finite element for velocity and pressure spaces.
+    Default: Second order for the velocity vector space and first order for the pressure space.
 
     Attributes
     ----------------------
     functionspace: the finite element function space
 
     v, q : TestFunctions of velocity vector and pressure
+    
+    tew : TestFunction vector (v, q)
 
     tu, tp : TrialFunctions of velocity vector and pressure
 
@@ -40,33 +135,43 @@ class TaylorHood:
 
     Examples
     ----------------------
-    >>> from MindFlow.BasicFunc.ElementFunc import TaylorHood
-    >>> from dolfin import *
-    >>> mesh = Mesh("mesh.xml")
-    >>> element = TaylorHood(mesh = mesh)
-    >>> element.functionspace
-    FunctionSpace(Mesh(VectorElement(FiniteElement('Lagrange', triangle, 1),
-     dim=2), 0), MixedElement(VectorElement(FiniteElement('Lagrange', triangle, 2),
-      dim=2), FiniteElement('Lagrange', triangle, 1)))
+    ...
 
     """
     def __init__(self, mesh=None, dim=2, order=(2,1), constrained_domain=None):
+        """
+        
+
+        Parameters
+        ----------
+        mesh : Mesh, optional
+            object created by FEniCS function Mesh. The default is None.
+        dim : int, optional
+            dimension of the mesh. The default is 2.
+        order : tuple, optional
+            Order/degree of the TaylorHood element. The default is (2,1).
+        constrained_domain : Sub_Domain, optional
+            constrained subdomain with map function in FEniCS (for periodic condition). The default is None.
+
+        Returns
+        -------
+        None.
+
+        """
+        super().__init__(mesh, dim, order, constrained_domain)
         self.type = 'TaylorHood'
-        self.mesh = mesh
-        self.dimension = dim # dimension of velocity field
-        self.order=order
-        self.constrained_domain=constrained_domain
         self.set_functionspace()
         self.set_function()
-         
+        
+    def new(self):
+        return TaylorHood(self.mesh, self.dim, self.order, self.constrained_domain)
 
     def set_functionspace(self):
         """
-        Create mixed function space
-        Second order vector element space and first order finite element space
+        Create mixed function space: second order vector element space and first order finite element space.
 
         """
-        P2 = VectorElement("Lagrange", self.mesh.ufl_cell(), self.order[0], dim=self.dimension) # velocity space
+        P2 = VectorElement("Lagrange", self.mesh.ufl_cell(), self.order[0], dim=self.dim) # velocity space
         P1 = FiniteElement("Lagrange", self.mesh.ufl_cell(), self.order[1]) # pressure space
         TH = MixedElement([P2, P1])
         self.functionspace = FunctionSpace(self.mesh, TH, constrained_domain=self.constrained_domain)
@@ -74,88 +179,91 @@ class TaylorHood:
 
     def set_function(self):
         """
-        Create TestFunctions (v, q), TrialFunctions tw = (tu, tp)
-         and Functions w = (u, p)
+        Create TestFunctions (v, q), TrialFunctions tw = (tu, tp) and Functions w = (u, p)
 
         """
-        self.tew = TestFunction(self.functionspace)
-        (self.v, self.q) = split(self.tew)
+        super().set_function()
         
-        self.tw = TrialFunction(self.functionspace)
-        (self.tu, self.tp) = split(self.tw)
-        
-        self.w = Function(self.functionspace)
-        (self.u, self.p) = split(self.w)
+        self.v, self.q = split(self.tew) # test functions
+        self.tu, self.tp = split(self.tw) # trial functions
+        self.u, self.p = split(self.w) # functions
 
     def add_functions(self):
+        """
+        Return an additional function from the function space.
+
+        """
         return Function(self.functionspace)
 
 #%%
-
-class combine_func:
-    def __init__(self, func_space1, func_space2):
-        self._func_space = (func_space1, func_space2)
-    
-    def sub(self, ind):
-        return self._func_space[ind]
-    
-    def num_sub_spaces(self):
-        return len(a)
-    
-    def dim(self):
-        return (self._func_space[0].dim(),self._func_space[1].dim())
-
-class Decoupled:
+class Decoupled(FiniteElementBase):
     """
-    N-D finite element for decoupled velocity and pressure space
-    Default: Second order for the velocity vector space and first
-    order for the pressure space
-
-    Parameters
-    ----------------------
-    mesh : object created by FEniCS function Mesh
-        mesh of the flow field
+    N-D finite element for decoupled velocity and pressure spaces
+    Default: Second order for the velocity vector space and first order for the pressure space.
 
     Attributes
     ----------------------
     functionspace: the finite element function space
 
     v, q : TestFunctions of velocity vector and pressure
+    
+    tew : tuple with TestFunction (v, q)
 
     tu, tp : TrialFunctions of velocity vector and pressure
+    
+    tw : tuple with TrialFunction (tu, tp)
 
     u, p : Functions of velocity vector and pressure
+    
+    w : tuple of Function (u, p)
 
     Examples
     ----------------------
     ...
 
     """
-    def __init__(self, mesh=None, dim=2, order=(2,1),constrained_domain=[None, None]):
+    def __init__(self, mesh=None, dim=2, order=(2,1),constrained_domain=(None, None)):
+        """
+        
+
+        Parameters
+        ----------
+        mesh : Mesh, optional
+            object created by FEniCS function Mesh. The default is None.
+        dim : int, optional
+            dimension of the mesh. The default is 2.
+        order : tuple, optional
+            Order/degree of the Decoupled element. The default is (2,1).
+        constrained_domain : tuple of Sub_Domain, optional
+            constrained subdomain with map function in FEniCS (for periodic condition). The default is [None, None].
+            
+        Returns
+        -------
+        None.
+
+        """
+        super().__init__(mesh, dim, order, constrained_domain)
         self.type = 'Decoupled'
-        self.mesh = mesh
-        self.dimension=dim
-        self.order=order
-        self.constrained_domain=constrained_domain
         self.set_functionspace()
         self.set_function()
+        
+    def new(self):
+        return Decoupled(self.mesh, self.dim, self.order, self.constrained_domain)
 
 
     def set_functionspace(self):
         """
-        Create split function space
-        Second order vector element space and first order finite element space
+        Create separate function spaces for velocity and pressure.
 
         """
-        self.functionspace_V = VectorFunctionSpace(self.mesh, 'P', self.order[0],dim=self.dimension, constrained_domain=self.constrained_domain[0])
+        self.functionspace_V = VectorFunctionSpace(self.mesh, 'P', self.order[0],dim=self.dim, constrained_domain=self.constrained_domain[0])
         self.functionspace_Q = FunctionSpace(self.mesh, 'P', self.order[1], constrained_domain=self.constrained_domain[1])
         self.functionspace = combine_func(self.functionspace_V, self.functionspace_Q)
         info("Dimension of the function space: Vel: %g    Pre: %g" % (self.functionspace_V.dim(),self.functionspace_Q.dim()))
 
     def set_function(self):
         """
-        Create TestFunctions (v, q), TrialFunctions (tu, tp)
-         and Functions w = (u, p)
+        Create TestFunctions (v, q), TrialFunctions (tu, tp) and Functions w = (u, p)
 
         """
         self.v = TestFunction(self.functionspace_V)
@@ -171,24 +279,26 @@ class Decoupled:
         self.w = (self.u, self.p)
 
     def add_functions(self):
-        return Function(self.functionspace_V), Function(self.functionspace_Q)
+        """
+        Return additional functions for velocity and pressure.
+        """
+
+        return (Function(self.functionspace_V), Function(self.functionspace_Q))
 #%%
 
-class PoissonPR:
+class PoissonPR(FiniteElementBase):
     """
-    N-D finite element for solving poisson equation
-    Default: first order for one space and zero order for another space
+    N-D finite element for solving the Poisson equation.
 
-    Parameters
-    ----------------------
-    mesh : object created by FEniCS function Mesh
-        mesh of the flow field
+    Default: First order for one space and zero order for another space.
 
     Attributes
     ----------------------
     functionspace: the finite element function space
 
     q, d : TestFunctions 
+    
+    tew : TestFunction vector (q, d)
 
     tp, tc : TrialFunctions 
     
@@ -204,18 +314,34 @@ class PoissonPR:
 
     """
     def __init__(self, mesh=None, order=(1,0),constrained_domain=None):
+        """
+        
+
+        Parameters
+        ----------
+        mesh : Mesh, optional
+            object created by FEniCS function Mesh. The default is None.
+        order : tuple, optional
+            Order/degree of the Decoupled element. The default is (1,0).
+        constrained_domain : Sub_Domain, optional
+            constrained subdomain with map function in FEniCS (for periodic condition). The default is None.
+          
+        Returns
+        -------
+        None.
+
+        """
+        super().__init__(mesh, dim=mesh.topology().dim(), order=order, constrained_domain=constrained_domain)
         self.type = 'PoissonPR'
-        self.mesh = mesh
-        self.order=order
-        self.constrained_domain=constrained_domain
         self.set_functionspace()
         self.set_function()
-
-
+        
+    def new(self):
+        return PoissonPR(self.mesh, self.dim, self.order, self.constrained_domain)
+    
     def set_functionspace(self):
         """
-        Create mixed function space
-        first order Lagrange finite element and zero order real finite element
+        Create mixed function space: first order Lagrange element and zero order real finite element.
 
         """
         P1 = FiniteElement("Lagrange", self.mesh.ufl_cell(), self.order[0])
@@ -231,11 +357,14 @@ class PoissonPR:
          and Functions w = (p, c)
 
         """
-        (self.q, self.d) = TestFunctions(self.functionspace)
-        self.tw = TrialFunction(self.functionspace)
-        (self.tp, self.tc) = split(self.tw)
-        self.w = Function(self.functionspace)
-        (self.p, self.c) = split(self.w)
+        super().set_function()
+        self.q, self.d = split(self.tew)
+        self.tp, self.tc = split(self.tw)
+        self.p, self.c = split(self.w)
+        
 
     def add_functions(self):
+        """
+        Return an additional function from the function space.
+        """
         return Function(self.functionspace)

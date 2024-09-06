@@ -4,20 +4,23 @@
 Created on Tue Aug 20 16:32:49 2024
 
 @author: bojin
+
+FreqSolver Module
+
+This module provides classes for solving frequency responses of linearized Navier-Stokes systems
+and generating common input/output vectors for these solvers.
+
 """
 
 from src.Deps import *
 
-from src.NSolver.SolverBase import NSolverBase
-from src.BasicFunc.ElementFunc import TaylorHood
-from src.BasicFunc.Boundary import SetBoundary, SetBoundaryCondition
-from src.BasicFunc.InitialCondition import SetInitialCondition
+from src.FreqAnalys.FreqSolverBase import FreqencySolverBase
 from src.Eqns.NavierStokes import Incompressible
-from src.LinAlg.MatrixOps import AssembleMatrix, AssembleVector, InverseMatrixOperator, SparseLUSolver
-from src.LinAlg.Utils import allclose_spmat, get_subspace_info
+from src.LinAlg.MatrixOps import AssembleMatrix, AssembleVector, ConvertVector,ConvertMatrix, InverseMatrixOperator
+from src.LinAlg.Utils import allclose_spmat, get_subspace_info, find_subspace_index
 
 #%%
-class FrequencyResponse(NSolverBase):
+class FrequencyResponse(FreqencySolverBase):
     """
     Solve Frequency Response of a linearized Navier-Stokes system with given input and output vectors.
     """
@@ -32,125 +35,32 @@ class FrequencyResponse(NSolverBase):
         Re : float, optional
             Reynolds number. Default is None.
         order : tuple, optional
-            Order of finite element. Default is (2,1).
+            Order of finite elements. Default is (2, 1).
         dim : int, optional
             Dimension of the flow field. Default is 2.
         constrained_domain : SubDomain, optional
-            Constrained domain defined in FEniCS. Default is None.
-
-        Returns
-        -------
-        None.
-
+            Constrained domain defined in FEniCS (e.g., for periodic boundary conditions). Default is None.
         """
-        element = TaylorHood(mesh = mesh, order = order, dim = dim, constrained_domain = constrained_domain) # initialise finite element space
-        super().__init__(mesh, element, Re, None, None)
-       
-        # boundary condition
-        self.boundary_condition = SetBoundaryCondition(self.element.functionspace, self.boundary)
-        # init param
-        self.param['solver_type']='frequency_solver'
-        self.param['frequency_solver']={'method': 'lu', 
-                                        'lusolver': 'mumps'}
-        
-    def set_baseflow(self, ic, timestamp=0.0):
-        """
-        Set the base flow around which Navier-Stokes equations are linearized.
-
-        Parameters
-        ----------
-        ic : str or Function
-            Path or FEniCS function stores the base flow.
-        timestamp : float, optional
-            Timestamp of the base flow saved in the time-series file if ic is a path. Default is 0.0.
-
-        Returns
-        -------
-        None.
-
-        """
-        
-        SetInitialCondition(0, ic=ic, fw=self.eqn.fw[0], timestamp=timestamp)
-        
-        
-    def _form_LNS_equations(self, s):
-        """
-        Form the UFL expression of a linearized Navier-Stokes system.
-
-        Parameters
-        ----------
-        s : int, float, complex
-            The Laplace variable s, also known as the operator variable in the Laplace domain.
-
-        Returns
-        -------
-        None.
-
-        """
-        
-        # form Steady Linearised Incompressible Navier-Stokes Equations
-        leqn=self.eqn.SteadyLinear()
-        feqn=self.eqn.Frequency(s)
-        
-        for key in self.has_traction_bc.keys():
-            leqn += self.BoundaryTraction(self.eqn.tp, self.eqn.tu, self.eqn.nu, mark=self.has_traction_bc[key][0], mode=self.has_traction_bc[key][1])
-        
-        self.LNS=(leqn+feqn[0], feqn[1]) # (real part, imag part)
-
-    def _assemble_LHS(self, Mat=None):
-        """
-        Assemble the left-hand side [LHS=(sI-A)] of the linear system.
-        
-        u=(sI-A)^-1*f where RHS=f, Resp=u
-        
-        Parameters
-        ----------
-        Mat : scipy.sparse matrix, optional
-            Feedback matrix (if control is applied). The default is None.
-
-        Returns
-        -------
-        None.
-
-        """
-        # assemble the real part
-        Ar = AssembleMatrix(self.LNS[0],self.boundary_condition.bc_list)
-        
-        if Mat is not None:# feedback loop
-            Ar += Mat
-            
-        # assemble the imag part
-        Ai = AssembleMatrix(self.LNS[1],self.boundary_condition.bc_list) 
-        # matrix has only ones in diagonal for rows specified by the boundary condition
-        I_bc = AssembleMatrix(Constant(0.0)*self.LNS[1],self.boundary_condition.bc_list)
-        
-        # Complex matrix L with boundary conditions
-        LHS = Ar + Ai.multiply(1j)-I_bc.multiply(1j)
-        # Convert to CSC format for efficient LU decomposition
-        self.LHS = LHS.tocsc()
+        super().__init__(mesh, Re, order, dim, constrained_domain)
+        self.param['solver_type']='frequency_response'
+        self.param['frequency_response']={'method': 'lu', 
+                                        'lusolver': 'mumps',
+                                        'echo': False}
     
-    def __initialize_solver(self, method = 'lu', lusolver='mumps'):
+    def _initialize_solver(self):
         """
         Initialize the Inverse Matrix Operator and LU solver.
 
-        Parameters
-        ----------
-        method : str, optional
-            Solve Method to use. Default is 'lu'.
-        lusolver : str, optional
-            Type of LU solver to use. Default is 'mumps'.
-
-        Returns
-        -------
-        None.
-
         """
-        if method == 'lu':
-            info(f'LU decomposition using {lusolver.upper()} solver...')
-            self.Linv=InverseMatrixOperator(self.LHS,lusolver=lusolver, echo=False)
+        param = self.param[self.param['solver_type']]
+        self.LHS = self.pencil[0] + self.pencil[1].multiply(1j)
+        
+        if param['method'] == 'lu':
+            info(f"LU decomposition using {param['lusolver'].upper()} solver...")
+            self.Linv=InverseMatrixOperator(self.LHS,lusolver=param['lusolver'], echo=param['echo'])
             info('Done.')
             
-        elif method == 'krylov':
+        elif param['method'] == 'krylov':
             #self.Minv=precondition_jacobi(L, useUmfpack=useUmfpack)
             pass  # Krylov solver implementation pending
         
@@ -264,12 +174,13 @@ class FrequencyResponse(NSolverBase):
             #else: current Mat is None and the previous Mat is None (not 1st solve), do nothing; otherwise do above command
 
 
-        if self.rebuild:
+        if rebuild:
             self._form_LNS_equations(s)
-            self._assemble_LHS(Mat)
-            self.__initialize_solver(self.param['frequency_solver']['method'], self.param['frequency_solver']['lusolver'])
+            self._assemble_pencil(Mat)
+            self._initialize_solver()
         
         self.gain=self._solve_linear_system(input_vec, output_vec)
+        gc.collect()
         
 #%%
 class VectorGenerator:
@@ -278,21 +189,17 @@ class VectorGenerator:
     """
     def __init__(self, element, bc_obj=None):
         """
-        vector factory for frequency response solver and other applications
-        
+        Initialize the VectorGenerator.
+
         Parameters
         ----------
-        element : TYPE
-            DESCRIPTION.
-        bc_obj : SetBoundaryCondition: object, optional
-            DESCRIPTION. The default is None.
-
-        Returns
-        -------
-        None.
-
+        element : object
+            The finite element object defining the solution space.
+        bc_obj : SetBoundaryCondition, optional
+            Boundary condition object. Default is None.
         """
-        self.element=elelment
+        
+        self.element=element#.new()
         self.boundary_condition = bc_obj
         if bc_obj is not None:
             self.bc_list = self.boundary_condition.bc_list
@@ -301,21 +208,21 @@ class VectorGenerator:
     
     def _assemble_vec(self, expr, test_func, bc_list=[]):
         """
-        Assemble an expression or function into a vector (variational form)
+        Assemble an expression or function into a vector (variational form).
 
         Parameters
         ----------
         expr : expression or function
-            DESCRIPTION.
-        test_func : test function
-            test function from variational formula
+            The expression or function to assemble.
+        test_func : function
+            Test function from variational formula.
         bc_list : list, optional
-            boundary conditions. The default is [].
+            Boundary conditions. Default is [].
+
         Returns
         -------
         numpy array
-            DESCRIPTION.
-
+            Assembled vector as a numpy array.
         """
         
         var_form = dot(expr, test_func) * dx
@@ -324,23 +231,23 @@ class VectorGenerator:
     
     def _assemble_mat(self, trial_func, test_func, bc_list=[]):
         """
-        Assemble an unknown function into a matrix (variational form)
+        Assemble an unknown function into a matrix (variational form).
 
         Parameters
         ----------
-        trial_func : trialfunction
-            trial function from variational formula
-        test_func : test function
-            test function from variational formula
-        bc_list : boundary, optional
-            boundary conditions. The default is [].
+        trial_func : function
+            Trial function from variational formula.
+        test_func : function
+            Test function from variational formula.
+        bc_list : list, optional
+            Boundary conditions. Default is [].
 
         Returns
         -------
         scipy.sparse.csr_matrix
-            DESCRIPTION.
-
+            Assembled matrix in CSR format.
         """
+        
 
         var_form = dot(trial_func, test_func) * dx
         mat_wgt = AssembleMatrix(var_form, bc_list)
@@ -348,30 +255,24 @@ class VectorGenerator:
         
     def _assemble_bcs(self):
         """
-        Assemble matrix and vector for boundary conditions
-
-        Returns
-        -------
-        None.
-
+        Assemble matrices and vectors for boundary conditions.
         """
         self.bc_mat = self.boundary_condition.MatrixBC_rhs()
         self.bc_vec = self.boundary_condition.VectorBC_rhs()
         
     def set_boundarycondition(self, vec):
         """
-        Apply boundary conditions to a RHS vector (consider to mutiply variational weighted matrix first)
+        Apply boundary conditions to a RHS vector. (consider to mutiply variational weighted matrix first)
 
         Parameters
         ----------
         vec : numpy array
-            DESCRIPTION.
+            The vector to apply boundary conditions to.
 
         Returns
         -------
         numpy array
-            DESCRIPTION.
-
+            Vector with boundary conditions applied.
         """
         vec_bc = self.bc_mat * ConvertVector(vec,flag='Vec2PETSc') + self.bc_vec
         
@@ -379,19 +280,19 @@ class VectorGenerator:
         
     def variational_weight(self, vec):
         """
-        multiply a vector by the variational weight matrix for linear problems
+        Multiply a vector by the variational weight matrix for linear problems.
 
         Parameters
         ----------
-        vec : TYPE
-            DESCRIPTION.
+        vec : numpy array
+            Vector to be weighted.
 
         Returns
         -------
-        TYPE
-            DESCRIPTION.
-
+        numpy array
+            Weighted vector.
         """
+        
         if not hasattr(self, 'Mat_wgt'):
             self.Mat_wgt = self._assemble_mat(self.element.tw, self.element.tew)
             
@@ -403,13 +304,13 @@ class VectorGenerator:
     # def gaussian_vector(self, center, sigma, scale = 1.0, index = 0):
         
     #     sub_spaces = get_subspace_info(self.element.functionspace)
-    #     sub_inedex = find_subspace_index(index, sub_spaces)
+    #     sub_index = find_subspace_index(index, sub_spaces)
         
     #     v = self.element.tew
     #     for i in sub_index:
     #         v = v[i]
         
-    #     order = self.element.order[sub_inedex[0]]
+    #     order = self.element.order[sub_index[0]]
     #     expr= self._gaussian_expr(center, sigma, scale, order)
         
     #     return self._assemble(expr, v) # weighted vector
@@ -417,80 +318,80 @@ class VectorGenerator:
     # non-weighted vector, easy for plot/check
     def _gaussian_expr(self, center, sigma, scale = 1.0, order = None):
         """
-        
+        Define the Gaussian expression used to generate a Gaussian vector.
 
         Parameters
         ----------
-        center : TYPE
-            DESCRIPTION.
-        sigma : TYPE
-            DESCRIPTION.
-        scale : TYPE, optional
-            DESCRIPTION. The default is 1.0.
-        order : TYPE, optional
-            DESCRIPTION. The default is None.
+        center : tuple
+            The center of the Gaussian distribution.
+        sigma : float
+            The standard deviation of the Gaussian distribution.
+        scale : float, optional
+            The scale factor for the Gaussian distribution. Default is 1.0.
+        order : int, optional
+            The order of the finite element space. Default is None.
 
         Returns
         -------
-        expr : TYPE
-            DESCRIPTION.
-
+        Expression
+            The Gaussian expression.
         """
         if order is None:
             order = self.element.order[0]
-        dim = self.element.dimension 
+        dim = self.element.dim
 
         expr0 = 'scale * pow(pow(2.0*pi, dim/2) * pow(sigma, dim), -1)' # general formula
         expr1 = 'pow(-2.0*pow(sigma, 2),-1)'
         expr2 = '('
-        for i in range(self.dim):
-            expr2 += 'pow(x['+str(i)+']-center['+str(i)+'],2)'
-            if i < self.dim - 1:
+        for i in range(self.element.dim):
+            expr2 += 'pow(x['+str(i)+']-'+str(center[i])+',2)'
+            if i < self.element.dim - 1:
                 expr2 += '+'
         expr2 += ')'
-        
-        expr = Expression(expr0+'*exp('+expr1+'*'+expr2+')', degree=order, scale = scale,sigma = sigma, center = center, dim = dim)
+        expr = Expression(expr0+'*exp('+expr1+'*'+expr2+')', degree=order, scale = scale,sigma = sigma, dim = dim)
         return expr
     
     def gaussian_vector(self, center, sigma, scale = 1.0, index = 0, limit = None):
 
         """
-        Generate a vector with a Gaussian distribution with a specified scale at given coordinates to a specific subspace of a mixed element.
+        Generate a vector with a Gaussian distribution.
 
         Parameters
         ----------
         center : tuple
-            coordinate.
+            Coordinates of the center of the Gaussian distribution.
         sigma : float
-            The standard deviation of the distribution.
+            Standard deviation of the distribution.
         scale : float, optional
-            Coefficient. The default is 1.0.
+            Scale factor for the distribution. Default is 1.0.
         index : int, optional
-            scalar subspace index. The default is 0.
-        limit : int, float, optional
-            Vertices that are more than limit*sigma away from the center have a value of zero. The default is None.
+            Scalar subspace index. Default is 0.
+        limit : float, optional
+            Limit beyond which the Gaussian value is set to zero. Default is None.
+
         Returns
         -------
         numpy array
-            DESCRIPTION.
-
+            Generated Gaussian vector.
         """
+        
         # get subspace info
         sub_spaces = get_subspace_info(self.element.functionspace)
-        sub_inedex = find_subspace_index(index, sub_spaces)
+        sub_index = find_subspace_index(index, sub_spaces)
         # Access the subspace
-        subfunc = self.functionspace
-        w = self.element.w
+        subfunc = self.element.functionspace
+        w = self.element.add_functions()
+        w_sub = w
         for i in sub_index:
             subfunc = subfunc.sub(i)
-            w = w.sub(i)
+            w_sub = w_sub.sub(i)
         # form the expression
-        order = self.element.order[sub_inedex[0]]
+        order = self.element.order[sub_index[0]]
         expr= self._gaussian_expr(center, sigma, scale, order)
         # Interpolate the expression into the subspace
         func=interpolate(expr, subfunc.collapse())
         # Assign the interpolated function to the correct subspace of the mixed function
-        assign(w, func)
+        assign(w_sub, func)
         
         if limit is not None:
             # Convert the point coordinates to a Point object
@@ -503,36 +404,37 @@ class VectorGenerator:
             # find the global vertex index outside the limtation
             vertex_index = subdofs_index[np.asarray([point.distance(Point(*vertex)) for vertex in vertex_coords])>limit*sigma]
             # Set zero at the choosen vertex 
-            self.element.w.vector()[vertex_index] = 0
+            w.vector()[vertex_index] = 0
 
-        return self.element.w.vector().get_local()
+        return w.vector().get_local()
         
     
     def point_vector(self, coord, index, scale = 1.0):
         """
-        Apply a point source with a specified value at given coordinates to a specific subspace of a mixed element.
+        Apply a point source at specified coordinates to a subspace of a mixed element.
 
         Parameters
         ----------
         coord : tuple
-            A tuple (x, y) representing the coordinates of the point.
+            Coordinates of the point.
         index : int
-            The index of the scalar subspace to which the point source should be applied.
+            Index of the scalar subspace.
         scale : float, optional
-            The value to apply at the specified point (default is 1.0).
-            
+            Value to apply at the specified point. Default is 1.0.
+
         Returns
         -------
         numpy array
-            1-D numpy array.
-
+            Vector with the point source applied.
+            np.sum(vec)=1
         """
+        
         # get subspace info
         sub_spaces = get_subspace_info(self.element.functionspace)
-        sub_inedex = find_subspace_index(index, sub_spaces)
+        sub_index = find_subspace_index(index, sub_spaces)
         
         # Access the subspace
-        w = self.element.w
+        w = self.element.add_functions()
         subfunc = self.element.functionspace
         for i in sub_index:
             subfunc = subfunc.sub(i)
@@ -567,15 +469,15 @@ class VectorGenerator:
         """
         # get subspace info
         sub_spaces = get_subspace_info(self.element.functionspace)
-        sub_inedex = find_subspace_index(index, sub_spaces)
+        sub_index = find_subspace_index(index, sub_spaces)
         # get coordinates of global dofs, sorted as in Mixed Element Function
         subfunc = self.element.functionspace
         dofs_coords = subfunc.tabulate_dof_coordinates()
         # get subsapce to apply
-        w = self.element.w
+        w = self.element.add_functions()
         for i in sub_index:
             subfunc = subfunc.sub(i)
-            w = w.sub(i)
+
         # get indices of subspace in global dofs and the corresponding coordinates
         subdofs_index = subfunc.dofmap().dofs() 
         vertex_coords = dofs_coords[subdofs_index, :]
@@ -587,9 +489,9 @@ class VectorGenerator:
         # closet coordinate (not exactly equals to the given coordinate)
         coord_cloest=dofs_coords[closest_vertex_index]
         # Set the value at the closest vertex in the specified subspace
-        self.element.w.vector()[closest_vertex_index] = value
+        w.vector()[closest_vertex_index] = value
 
-        return self.element.w.vector().get_local(), tuple(coord_cloest)
+        return w.vector().get_local(), tuple(coord_cloest)
     
             
     def random_vector(self, distribution='uniform', seed=None):
@@ -623,27 +525,26 @@ class VectorGenerator:
     # already weighted due to the physical nature
     def _force_expr(self, mark, Re):
         """
-        body force expression
+        Define the force expression used to calculate the lift or drag.
 
         Parameters
         ----------
-        mark : TYPE
-            DESCRIPTION.
-        Re : TYPE
-            DESCRIPTION.
+        mark : int
+            the boundary mark of the body.
+        Re : float
+            Reynolds number.
 
         Returns
         -------
-        TYPE
-            DESCRIPTION.
-        TYPE
-            DESCRIPTION.
+        Expression
+            The force expression.
+            1st index for direction, 2nd index for component
 
         """
         eqn=Incompressible(self.element, self.boundary_condition.set_boundary, Re)
         force_expr=eqn.force_expr()
         
-        dim = self.element.dimension
+        dim = self.element.dim
 
         force = ()
         for i in range(dim):
@@ -688,7 +589,9 @@ class VectorGenerator:
         
     def unit_oscaccel_vector(self, dirc, s):
         """
-        Fluid: specify oscillating acceleration
+        Generate a vector for fluid oscillating acceleration.
+        
+        Fluid: specified oscillating acceleration
         a = mag * e^(st) --> uniform force
         v = mag/s * e^(st) -->  boundary condition
         
@@ -702,11 +605,12 @@ class VectorGenerator:
 
         Returns
         -------
-        None.
+        numpy array
+            Vector for fluid oscillating acceleration.
 
         """
         sub_spaces = get_subspace_info(self.element.functionspace)
-        sub_inedex = find_subspace_index(dirc, sub_spaces)
+        sub_index = find_subspace_index(dirc, sub_spaces)
         
         tew = self.element.tew
         for i in sub_index:
@@ -720,7 +624,9 @@ class VectorGenerator:
     
     def unit_oscvel_vector(self, dirc, s):
         """
-        Fluid: specify oscillating velocity 
+        Generate a vector for fluid oscillating velocity.
+        
+        Fluid: specified oscillating velocity 
         v = mag * e^(st) -->  boundary condition
         a = mag * s * e^(st) --> uniform force
         
@@ -734,11 +640,12 @@ class VectorGenerator:
 
         Returns
         -------
-        None.
+        numpy array
+            Vector for fluid oscillating acceleration.
 
         """
         sub_spaces = get_subspace_info(self.element.functionspace)
-        sub_inedex = find_subspace_index(dirc, sub_spaces)
+        sub_index = find_subspace_index(dirc, sub_spaces)
         
         tew = self.element.tew
         for i in sub_index:
@@ -750,7 +657,9 @@ class VectorGenerator:
     
     def unit_oscdisp_vector(self, dirc, s):
         """
-        Fluid: specify oscillating displacement
+        Generate a vector for fluid oscillating displacement.
+        
+        Fluid: specified oscillating displacement
         d = mag * e^(st)
         v = mag * s * e^(st) -->  boundary condition
         a = mag * s^2 * e^(st) --> uniform force
@@ -765,11 +674,12 @@ class VectorGenerator:
 
         Returns
         -------
-        None.
+        numpy array
+            Vector for fluid oscillating acceleration.
 
         """
         sub_spaces = get_subspace_info(self.element.functionspace)
-        sub_inedex = find_subspace_index(dirc, sub_spaces)
+        sub_index = find_subspace_index(dirc, sub_spaces)
         
         tew = self.element.tew
         for i in sub_index:
@@ -781,6 +691,8 @@ class VectorGenerator:
     
     def unit_rotvel_vector(self, mark, s=None, radius=1.0, center=(0.0, 0.0)):
         """
+        Generate a vector for rotating velocity of a 2D cylinder at the origin.
+        
         2D Cylinder at origin (0,0): specify rotating velocity 
         v = mag * e^(st) at surface
         no acceleration applied on the fluid
@@ -799,22 +711,24 @@ class VectorGenerator:
         Returns
         -------
         vec : numpy array
-            DESCRIPTION.
+            Vector for rotating velocity.
 
         """
         index = 0
         tew = self.element.tew.sub(index) 
         
-        vel_rotate = Expression(('(x[1]-center[1])/radius', '(-x[0]+center[0])/radius'), degree=self.element.order[index], center=center, radius = radius)
+        vel_rotate = Expression(('(x[1]-center[1])/radius', '(-x[0]+center[0])/radius'), 
+                                degree=self.element.order[index], center=center, radius = radius)
         BC_rotate = DirichletBC(self.element.functionspace.sub(index), vel_rotate, self.boundary_condition.boundary, mark, method="geometric")
-        bcs = [BC_rotate]
         
-        vec = self._assemble_vec(Constant((0.0, 0.0)), tew, bcs)
+        vec = self._assemble_vec(Constant((0.0, 0.0)), tew, [BC_rotate])
         
         return vec
     
     def unit_rotaccel_vector(self, mark, s, radius=1.0, center=(0.0, 0.0)):
         """
+        Generate a vector for rotating acceleration of a 2D cylinder at the origin.
+        
         2D Cylinder at origin (0,0): specify rotating acceleration
         a = mag * e^(st) at surface
         v = mag * 1/s * e^(st) at surface
@@ -833,13 +747,15 @@ class VectorGenerator:
             Center of the cylinder. The default is (0.0, 0.0).
         Returns
         -------
-        None.
+        numpy array
+            Vector for rotating acceleration.
 
         """
         index = 0
         tew = self.element.tew.sub(index) 
         
-        vel_rotate = Expression(('(x[1]-center[1])/radius', '(-x[0]+center[0])/radius'), degree=self.element.order[index], center=center, radius = radius)
+        vel_rotate = Expression(('(x[1]-center[1])/radius', '(-x[0]+center[0])/radius'), 
+                                degree=self.element.order[index], center=center, radius = radius)
 
         BC_clean = DirichletBC(self.element.functionspace.sub(index), Constant((0.0, 0.0)), self.boundary_condition.boundary, mark, method="geometric")
         BC_rotate = DirichletBC(self.element.functionspace.sub(index), vel_rotate, self.boundary_condition.boundary, mark, method="geometric")
@@ -854,6 +770,8 @@ class VectorGenerator:
     
     def unit_rotangle_vector(self, mark ,s, radius=1.0, center=(0.0, 0.0)):
         """
+        Generate a vector for rotating angle of a 2D cylinder at the origin.
+        
         2D Cylinder at origin (0,0): specify rotating angle
         angle = mag * e^(st)
         v = mag * s * e^(st) at surface
@@ -875,13 +793,15 @@ class VectorGenerator:
             
         Returns
         -------
-        None.
+        numpy array
+            Vector for rotating angle.
 
         """
         index = 0
         tew = self.element.tew.sub(index) 
         
-        vel_rotate = Expression(('(x[1]-center[1])/radius', '(-x[0]+center[0])/radius'), degree=self.element.order[index], center=center, radius = radius)
+        vel_rotate = Expression(('(x[1]-center[1])/radius', '(-x[0]+center[0])/radius'), 
+                                degree=self.element.order[index], center=center, radius = radius)
 
         BC_clean = DirichletBC(self.element.functionspace.sub(index), Constant((0.0, 0.0)), self.boundary_condition.boundary, mark, method="geometric")
         BC_rotate = DirichletBC(self.element.functionspace.sub(index), vel_rotate, self.boundary_condition.boundary, mark, method="geometric")

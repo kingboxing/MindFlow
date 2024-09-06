@@ -1,49 +1,41 @@
-from dolfin import *
 import numpy as np
+from scipy.sparse import csc_matrix
+from scipy.sparse.linalg import eigs
+import scipy.linalg as sla
+n=100
 
- # Define mesh
-mesh = UnitSquareMesh(10, 10)
-value=1.0
-# Define mixed element (e.g., scalar and vector element)
-P1 = FiniteElement('P', triangle, 1)  # Scalar element
-P2 = VectorElement('P', triangle, 1)  # Vector element
-mixed_element = MixedElement([P1, P2])
+# Define the 5x5 matrix A
+A = np.random.rand(n, n)
+A[n-1, 0:n-1]=0
+A[n-1, n-1]=1
 
+A[0:n-1, n-1]=0
+A[n-1, n-1]=0
+# Define the 5x5 matrix B (must be symmetric and positive definite for generalized eigenvalue problems)
+B = np.random.rand(n, n)
+B = (B + B.T) / 2  # Make B symmetric
+B += n * np.eye(n)  # Make B positive definite by adding a multiple of the identity
+B[n-1, 0:n-1]=0
+B[n-1, n-1]=1
 
+B[0:n-1, n-1]=0
+B[n-1, n-1]=1
 
-# Specify coordinates and subspace index
-point_coordinates = (0.2, 0.8)
-subspace_index = 0  # Apply to the first subspace (scalar component)
+# Convert matrices A and B to sparse format (scipy sparse matrices)
+A_sparse = csc_matrix(A.astype(float))
+B_sparse = csc_matrix(B.astype(float))
+#C= np.linalg.inv(A)
+#C_sparse = csc_matrix(C.astype(float))
+# Solve the generalized eigenvalue problem A v = λ B v
+eigenvalues, eigenvectors = eigs(A_sparse, M=B_sparse, k=1, which='LM')  # k=3 means we want 3 eigenvalues
 
-# Apply the point source
-# Create the mixed function space
-V = FunctionSpace(mesh, mixed_element)
+# Display the eigenvalues and eigenvectors
+print("Eigenvalues:")
+print(eigenvalues)
 
+vals,_=sla.eig(A,B)
 
-# Create the function in the mixed space
-u = Function(V)
-
-dofs_coor = V.tabulate_dof_coordinates()#.reshape((-1, 2))
-dofs_sub = V.sub(0).dofmap().dofs() # index of subsapce in dofs_coor 
-vertex_coords = dofs_coor[dofs_sub, :]
-
-# Convert the point coordinates to a Point object
-point = Point(*point_coordinates)
-closest_vertex_index = dofs_sub[np.argmin([point.distance(Point(*vertex)) for vertex in vertex_coords])]
-
-coord_clo=dofs_coor[closest_vertex_index]
-# Set the value at the closest vertex in the specified subspace
-u.vector()[closest_vertex_index] = value
-
-
-
-
-
-# Print the results for each subspace
-print("Scalar component (subspace 0):", u.sub(0).vector().get_local())
-print("Vector component (subspace 1):", u.sub(1).vector().get_local())
-
-# Optionally, visualize the scalar and vector components
-import matplotlib.pyplot as plt
-plot(u.sub(0), title="Scalar component")
-plt.show()
+print("All Eigenvalues:")
+print(vals)
+# print("Eigenvectors:")
+# print(eigenvectors)

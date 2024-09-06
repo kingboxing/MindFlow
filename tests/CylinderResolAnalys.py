@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Tue Oct 17 20:53:24 2023
+Created on Fri Sep  6 23:59:16 2024
 
 @author: bojin
 """
@@ -18,7 +18,7 @@ start_time = time.time()
 mesh=Mesh("./data/mesh/cylinder_26k.xml")
 element=TaylorHood(mesh=mesh,order=(2,1))
 # initialise solver
-solver = EigenAnalysis(mesh=mesh, order=(2,1))
+solver = ResolventAnalysis(mesh=mesh, order=(2,1))
 
 # store boundary locations and conditions
 BoundaryLocations = {1 : {'name': 'Top',     'location':'on_boundary and near(x[1], 15.0, tol)'},
@@ -48,13 +48,13 @@ data.retrieve(element.w.vector(), 0.0)
 # set baseflow
 solver.set_baseflow(ic=element.w)
 # solve
-solver.param[solver.param['solver_type']]['which']='LR'
+solver.param[solver.param['solver_type']]['which']='LM'
 
-solver.solve(k=2, Re=Re)
+solver.solve(k=2, s=0.7*1j, Re=Re)
 
 # print results
 print('Results are printed as follows : ')
-print(f'Re = {Re}\nEigenvalues = {solver.vals}')
+print(f'Re = {Re}\nEigenvalues = {solver.energy_amp}')
 #%%
 elapsed_time = time.time() - start_time
 cpu_usage_after = psutil.cpu_percent(interval=None, percpu=True)

@@ -21,147 +21,118 @@ This module provides the classes that solve Navier-Stokes equations
 
 class NewtonSolver(NSolverBase):
     """
-    Solver of steady Navier-Stokes equations using Newton method
-
-
-    Examples
-    ----------------------------
-    here is a snippet code shows how to use this class
-
-    >>> see test 'CylinderBaseFlow.py'
+    Solver for steady Navier-Stokes equations using the Newton method.
 
     """
     
     def __init__(self, mesh, Re=None, const_expr=None, order=(2,1), dim=2, constrained_domain=None):
         """
-        Initial Steady Incompressible Navier-Stokes Newton Solver
+        Initialize the Steady Incompressible Navier-Stokes Newton Solver.
 
         Parameters
         ----------
-        mesh : TYPE
-            DESCRIPTION.
-        Re : TYPE, optional
-            DESCRIPTION. The default is None.
-        const_expr : TYPE, optional
-            DESCRIPTION. The default is None.
-        order : TYPE, optional
-            DESCRIPTION. The default is (2,1).
-        dim : TYPE, optional
-            DESCRIPTION. The default is 2.
-        constrained_domain : TYPE, optional
-            DESCRIPTION. The default is None.
-
-        Returns
-        -------
-        None.
-
+        mesh : Mesh
+            The computational mesh.
+        Re : float, optional
+            The Reynolds number. The default is None.
+        const_expr : Expression, Function or Constant, optional
+            The time-invariant source term for the flow field. The default is None.
+        order : tuple, optional
+            The order of the finite element. The default is (2, 1).
+        dim : int, optional
+            The dimension of the problem (2D or 3D). The default is 2.
+        constrained_domain : SubDomain, optional
+            Domain for applying constraints (e.g., for periodic boundary conditions). The default is None.
         """
         # init solver
         element = TaylorHood(mesh = mesh, order = order, dim = dim, constrained_domain = constrained_domain) # initialise finite element space
-        NSolverBase.__init__(self, mesh, element, Re, const_expr, None)
+        super().__init__(mesh, element, Re, const_expr, time_expr=None)
        
         # boundary condition
         self.boundary_condition = SetBoundaryCondition(self.element.functionspace, self.boundary)
-        # init param
+        # Initialize solver parameters
         self.param['solver_type']='newton_solver'
         self.param['newton_solver']={}
-
-    def __SNSEqn(self):
+        
+    def _form_SINS_equations(self):
         """
-        UFL expression of steady Naviar-Stokes equations in the weak form
+        Formulate the steady Navier-Stokes equations in their weak form.
 
         Returns
         -------
-        None.
-
+        None
         """
-        # form Steady Incompressible Navier-Stokes Equations
-        seqn=self.eqn.SteadyNonlinear()
-        self.SNS=seqn
+        # Steady Incompressible Navier-Stokes Equations
+        self.SNS = self.eqn.SteadyNonlinear()
         
-        " pending for dealing with free boundary/ zero boundary traction condition in bc_list"
-        # if self.boundary_condition.has_free_bc is False: 
-        #     self.SNS+=seqn[1] 
-        # else:
-        #     self.has_free_bc=self.boundary_condition.has_free_bc
-        
-        for key in self.has_traction_bc.keys():
-            self.SNS+=self.BoundaryTraction(self.eqn.p, self.eqn.u, self.eqn.nu, mark=self.has_traction_bc[key][0], mode=self.has_traction_bc[key][1])
-
-    def __NewtonMethod(self):
+        ## dealing with free boundary/ zero boundary traction condition in bc_list
+        for key, value in self.has_traction_bc.items():
+            self.SNS += self.BoundaryTraction(self.eqn.p, self.eqn.u, self.eqn.nu, mark=value[0], mode=value[1])
+            
+    def _initialize_newton_solver(self):
         """
-        Initialise Newton solver
-        
+        Initialize the Newton solver for the nonlinear Navier-Stokes problem.
+
         Returns
         -------
-        None.
+        None
         """
         J = derivative(self.SNS, self.element.w, self.element.tw) # Jacobian matrix
         problem = NonlinearVariationalProblem(self.SNS, self.element.w, self.boundary_condition.bc_list, J) # Nonlinear problem
         self.solver = NonlinearVariationalSolver(problem) # Nonlinear solver
         self.solver.parameters.update({'newton_solver':self.param['newton_solver']})
-        
+        #self.solver.parameters.update(self.param['newton_solver'])
+
     def initial(self, ic=None, timestamp=0.0):
         """
-        Set initial condition
+        Set the initial condition for the simulation.
 
         Parameters
         ----------
-        ic : TYPE, optional
-            DESCRIPTION. The default is None.
-        timestamp : TYPE, optional
-            DESCRIPTION. The default is 0.0.
-
-        Returns
-        -------
-        None.
-
+        ic : str or Function, optional
+            The initial condition as a file path or a FEniCS function. The default is None.
+        timestamp : float, optional
+            The timestamp for retrieving the initial condition from a time series. The default is 0.0.
         """
         
-        SetInitialCondition(0, ic=ic, fw=self.eqn.fw[0], timestamp=timestamp)
+        SetInitialCondition(flag=0, ic=ic, fw=self.eqn.fw[0], timestamp=timestamp)
 
-        
-    def parameters(self, param):
+    def update_parameters(self, param):
         """
-        Set solve parameters
+        Update the solver parameters.
 
         Parameters
         ----------
-        param : TYPE
-            DESCRIPTION.
-
-        Returns
-        -------
-        None.
-
+        param : dict
+            A dictionary containing solver parameters to update.
         """
-        # update solver parameters
         self.param.update(param)
-
-
+        
     def solve(self, Re=None, const_expr=None):
         """
-        Solve the problem
+        Solve the steady Navier-Stokes equations using the Newton method.
 
         Parameters
         ----------
-        Re : TYPE, optional
-            DESCRIPTION. The default is None.
-        const_expr : TYPE, optional
-            DESCRIPTION. The default is None.
+        Re : float, optional
+            The Reynolds number. The default is None.
+        const_expr : Expression or Function, optional
+            The time-invariant source term for the flow field. The default is None.
 
         Returns
         -------
-        None.
-
+        None
         """
+        
         if Re is not None:
             self.eqn.Re = Re
         if const_expr is not None:
             self.eqn.const_expr = const_expr
             
-        self.__SNSEqn()
-        self.__NewtonMethod()
+        self._form_SINS_equations()
+        self._initialize_newton_solver()
         self.solver.solve()
+        gc.collect()
+
         
         
