@@ -107,6 +107,8 @@ class EigenAnalysis(FreqencySolverBase):
         param = self.param[self.param['solver_type']]
         OPinv = self.OPinv if sigma is not None else None
         
+        if sigma is not None:
+            info('Internal Shift-Invert Mode Solver is on')
         return spla.eigs(self.A, k=k, M=self.M, Minv=None, OPinv=OPinv, sigma=sigma, which=param['which'],
                                                                 v0=param['v0'],ncv=param['ncv'], maxiter=param['maxiter'], tol=param['tol'],
                                                                 return_eigenvectors=param['return_eigenvectors'], OPpart=param['OPpart'])
@@ -129,7 +131,7 @@ class EigenAnalysis(FreqencySolverBase):
         tuple
             Eigenvalues and eigenvectors.
         """
-
+        info('Explicit Shift-Invert Mode Solver is on')
         if sigma is None:
             sigma = 0.0
             
@@ -138,7 +140,7 @@ class EigenAnalysis(FreqencySolverBase):
         else:
             expr = self.OPinv*spla.aslinearoperator(self.M)
             
-        if isinstance(sigma, complex): # if sigma is complex, then convert expr to complex
+        if isinstance(sigma, (complex, np.complexfloating)): # if sigma is complex, then convert expr to complex
             expr = expr.astype(complex) # now eigs computes w'[i] = 1/(w[i]-sigma).
         
         vals, vecs = spla.eigs(expr, k=k, M=None, Minv=None, OPinv=None, sigma=None, which=param['which'],
@@ -150,7 +152,7 @@ class EigenAnalysis(FreqencySolverBase):
         return vals, vecs
         
         
-    def solve(self, k=3, sigma=0.0, Re=None, Mat=None, solve_type='implicit', inverse=False, reuse=False, BCpart=None):
+    def solve(self, k=3, sigma=0.0, Re=None, Mat=None, solve_type='implicit', inverse=False, reuse=False, BCpart=None, sz = None):
         """
         Solve for k eigenvalues and eigenvectors of system.
 
@@ -159,7 +161,7 @@ class EigenAnalysis(FreqencySolverBase):
         k : int, optional
             Number of eigenvalues to find. Default is 3.
         sigma : real or complex, optional
-            Shift value for the shift-invert method. Default is None.
+            Shift value for the shift-invert method. Default is 0.0.
         Mat : scipy.sparse matrix, optional
             Feedback matrix if control is applied. Default is None.
         solve_type : str, optional
@@ -170,6 +172,8 @@ class EigenAnalysis(FreqencySolverBase):
             If True, reuse the previous solver and matrices. Default is False.
         BCpart : ‘r’ or ‘i’/None, optional
             The homogenous boundary conditions are applied in the real (matrix NS) or imag (matrix M) part of system. The default is None.
+        sz : complex or tuple/list of complex, optional
+            Spatial frequency parameters for quasi-analysis of the flow field. Default is None.
             
             if BCpart == 'r':
                 A is not full-rank, M is not full rank
@@ -191,7 +195,7 @@ class EigenAnalysis(FreqencySolverBase):
             self.eqn.Re = Re
             
         if not reuse:
-            self._form_LNS_equations(s=1.0j)
+            self._form_LNS_equations(s=1.0j, sz = sz)
             self._assemble_pencil(Mat, symmetry=True, BCpart=BCpart)
             self._initialize_solver(sigma, inverse)
         

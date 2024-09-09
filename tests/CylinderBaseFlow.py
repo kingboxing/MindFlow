@@ -48,7 +48,7 @@ solver.set_boundarycondition()
 # solve for Re=80
 Re=80
 # compare results
-datapath='./data/baseflow/bf_newton_cylinder_26k_re080'
+datapath='./data/baseflow/bf_newton_cylinder_26k_re'+str(Re).zfill(3)
 data = TimeSeries(datapath)
 data.retrieve(element.w.vector(), 0.0)
 

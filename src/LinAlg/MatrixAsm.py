@@ -29,7 +29,7 @@ def IdentMatProl(element, index=None):
 
     Returns
     -------
-    A : scipy.sparse.dia_matrix
+    A : scipy.sparse.csr_matrix
         Prolongation matrix with size of n x k, where k is the dim after delete the specified subspace. 
     """
     diag = np.ones(element.functionspace.dim())
@@ -37,7 +37,7 @@ def IdentMatProl(element, index=None):
     if index is None: # if None, delete the last subspace
         index = np.sum(sub_spaces)-1
     
-    if isinstance(index, int): # make a list to iterate
+    if isinstance(index, (int, np.integer)): # make a list to iterate
         index = [index]
     elif not isinstance(index, (list, tuple)):
         raise TypeError('Wrong type of subspace index specified')
@@ -53,7 +53,7 @@ def IdentMatProl(element, index=None):
         # set identity array with zeros for the specified subspace
         diag[subdofs_index]=0
     
-    A = sp.diags(diag)
+    A = sp.diags(diag).tocsr()
     # Remove zero columns and return
     indices = A.nonzero()
     return A[:, indices[1]]
@@ -90,14 +90,17 @@ def IdentMatBC(element, bcs=[]):
 
     Returns
     -------
-    scipy.sparse.dia_matrix
+    scipy.sparse.csr_matrix
         Identity matrix with zeros for boundary condition rows.
     """
     
     I = sp.identity(element.functionspace.dim())
-    Z = PETScMatrix().zero()
-    [bc.apply(Z) for bc in bcs]
-    return I - ConvertMatrix(Z).todia()
+    
+    expr = Constant(0.0) * inner(element.tw, element.tew) * dx(99)
+    Z = AssembleMatrix(expr, bcs=bcs)
+    Z.eliminate_zeros()
+
+    return I - Z
 
 def IdentMatSub(element, bound=None):
     """
@@ -112,7 +115,7 @@ def IdentMatSub(element, bound=None):
 
     Returns
     -------
-    scipy.sparse.dia_matrix
+    scipy.sparse.csr_matrix
         Identity matrix of size nxn with zeros for elements outside the subdomain.
     """
     
@@ -130,7 +133,7 @@ def IdentMatSub(element, bound=None):
         subdomain1 = Omega_1()  
         bc=DirichletBC(element.functionspace, Constant((0,)*num_subspaces), subdomain1)
         bc.apply(Z)
-        return ConvertMatrix(Z).todia()
+        return ConvertMatrix(Z)
     else:
         raise TypeError('Wrong type of subdomain condition specified.')
         
@@ -147,7 +150,7 @@ def MatP(element):
         String specifying the subdomain condition. Default is None.
     Returns
     -------
-    scipy.sparse.dia_matrix
+    scipy.sparse.csr_matrix
         Prolongation matrix.
     """
     P = IdentMatProl(element)
@@ -214,7 +217,7 @@ def MatD(element, bound):
         String specifying the subdomain condition. Default is None.
     Returns
     -------
-    scipy.sparse.dia_matrix
+    scipy.sparse.csr_matrix
         Prolongation matrix of size k x m.
 
     """

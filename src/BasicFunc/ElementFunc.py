@@ -34,7 +34,7 @@ class FiniteElementBase:
             Constrained subdomain with map function in FEniCS (for periodic condition). The default is None.
         """
         self.mesh = mesh
-        self.dim = int(dim)
+        self.dim = dim
         self.order = order
         self.constrained_domain = constrained_domain
         self.functionspace = None

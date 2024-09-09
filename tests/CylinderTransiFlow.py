@@ -53,7 +53,7 @@ solver.set_boundary()
 solver.set_boundarycondition()
 
 #%% initial condition
-datapath='./data/baseflow/bf_newton_cylinder_26k_re080'
+datapath='./data/baseflow/bf_newton_cylinder_26k_re'+str(Re).zfill(3)
 data = TimeSeries(datapath)
 data.retrieve(element_base.w.vector(), 0.0)
 solver.initial(datapath, element_init=element_base)

@@ -42,19 +42,29 @@ solver.set_boundarycondition()
 Re=80
 
 # retrieve results
-datapath='./data/baseflow/bf_newton_cylinder_26k_re080'
+datapath='./data/baseflow/bf_newton_cylinder_26k_re'+str(Re).zfill(3)
 data = TimeSeries(datapath)
 data.retrieve(element.w.vector(), 0.0)
 # set baseflow
 solver.set_baseflow(ic=element.w)
 # solve
 solver.param[solver.param['solver_type']]['which']='LR'
-
 solver.solve(k=2, Re=Re)
 
+# compare results
+Error_vals = np.linalg.norm(np.loadtxt('./data/eigen/eigenvalues.txt') - 
+                            list(zip([Re], [np.abs(np.imag(solver.vals[0]))], 
+                                     [np.real(solver.vals[0])])), ord=np.inf)
+datapath='./data/eigen/cylinder_eigenvecs_LR_Re'+str(Re).zfill(3)
+data = TimeSeries(datapath)
+data.retrieve(element.w.vector(), 0.0)
+vecs = element.w.vector().get_local()
+data.retrieve(element.w.vector(), 1.0)
+vecs = vecs + element.w.vector().get_local()*1j
+Error_vecs=np.linalg.norm(np.abs(vecs)-np.abs(solver.vecs[:,0]), ord=np.inf)
 # print results
 print('Results are printed as follows : ')
-print(f'Re = {Re}\nEigenvalues = {solver.vals}')
+print(f'Re = {Re}\nEigenvalues = {solver.vals}\nValError_2norm = {Error_vals}\nVecError_2norm = {Error_vecs}')
 #%%
 elapsed_time = time.time() - start_time
 cpu_usage_after = psutil.cpu_percent(interval=None, percpu=True)

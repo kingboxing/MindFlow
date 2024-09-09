@@ -153,6 +153,77 @@ class Incompressible:
                 + div(self.tu)* self.q) * dx
         
         return SLNS
+    
+    def QuasiSteadyLinear(self, sz):
+        """
+        Define the steady linearized Navier-Stokes equations of Quasi-dimension in weak form.
+        
+        U(x, y, z, t) = U(x, y) e^{iwt} e^{ikt}
+        
+        2.5D/1.5D N-S equation
+        
+        3D problem -> 2D problem
+        2D problem -> 1D problem
+        
+        3D problem -> 1D problem
+
+        Parameters
+        ----------
+        sz : complex or tuple/list of complex, optional
+            Spatial frequency parameters for quasi-analysis of the flow field. Default is None.
+
+        Returns
+        -------
+        None.
+
+        """
+        # self.nu = Constant(1.0/self.Re)
+        # if isinstance(sz, (tuple, list)): # 3D -> 1D
+        #     indz = self.element.dim - 2
+        #     lambda_y = Constant(np.imag(sz[0]))
+        #     lambda_z = Constant(np.imag(sz[1]))
+            
+        # elif isinstance(sz, (complex, np.complexfloating)): # 3D/2d -> 2D/1D
+        #     indz = self.element.dim - 1 # mesh/baseflow is 2D, vel is 3D
+        #     lambda_z = Constant(np.imag(sz)) # get imag part 
+        #     QSLNS_i = Constant(1.0 / self.rho) * lambda_z*self.tp*self.v[indz]*dx + lambda_z*self.tu[indz]*self.q*dx # imag part
+            
+        #     QSLNS_r = (inner((self.u[0] * nabla_grad(self.tu)[0,:])+(self.u[1] * nabla_grad(self.tu)[1,:]), self.v) +
+        #                inner((self.tu[0] * nabla_grad(self.u)[0,:])+(self.tu[1] * nabla_grad(self.u)[1,:]), self.v) -
+        #                Constant(1.0 / self.rho) * (grad(self.v[0])[0]+grad(self.v[1])[1]) * self.tp + 
+        #                self.nu * inner(grad(self.tu), grad(self.v)) + self.nu*lambda_z*lambda_z*inner(self.tu,self.v) +
+        #                (grad(self.tu[0])[0]+grad(self.tu[1])[1]) * self.q) * dx # real part
+        #     # QSLNS_r = (inner(dot(self.u[0:indz], nabla_grad(self.tu)[0:indz, :]), self.v) +
+        #     #            inner(dot(self.tu[0:indz], nabla_grad(self.u)[0:indz, :]), self.v) -
+        #     #            Constant(1.0 / self.rho)  * self.tp * div(self.v[0:indz]) + 
+        #     #            self.nu * inner(grad(self.tu), grad(self.v)) + self.nu*lambda_z*lambda_z*inner(self.tu,self.v) +
+        #     #            div(self.tu[0:indz]) * self.q) * dx # real part
+            
+        #     return QSLNS_r, QSLNS_i
+        
+        self.nu = Constant(1.0/self.Re)
+        if isinstance(sz, (complex, np.complexfloating)): # 3D/2d -> 2D/1D
+            sz = (sz, )
+        elif isinstance(sz, (tuple, list)) and len(sz)>2: 
+            raise ValueError('The maximum dimension reduction is limited to two.')
+        
+        indz = self.element.dim - len(sz)
+        QSLNS_i = 0
+        QSLNS_r = 0
+        
+        for lambda_ in sz:
+            QSLNS_i += Constant(1.0 / self.rho) * lambda_*self.tp*self.v[indz]*dx + lambda_*self.tu[indz]*self.q*dx # imag part
+            QSLNS_r += self.nu*lambda_*lambda_*inner(self.tu,self.v)
+            
+        QSLNS_r = (inner(dot(self.u[0:indz], nabla_grad(self.tu)[0:indz, :]), self.v) +
+                    inner(dot(self.tu[0:indz], nabla_grad(self.u)[0:indz, :]), self.v) -
+                    Constant(1.0 / self.rho)  * self.tp * div(self.v[0:indz]) + 
+                    self.nu * inner(grad(self.tu), grad(self.v)) +
+                    div(self.tu[0:indz]) * self.q) * dx # real part
+            
+        return QSLNS_r, QSLNS_i
+            
+            
         
     def Frequency(self, s):
         """

@@ -40,7 +40,7 @@ solver.set_boundarycondition()
 Re=80
 s=0.5*1j
 # retrieve results
-datapath='./data/baseflow/bf_newton_cylinder_26k_re080'
+datapath='./data/baseflow/bf_newton_cylinder_26k_re'+str(Re).zfill(3)
 data = TimeSeries(datapath)
 data.retrieve(element.w.vector(), 0.0)
 # set baseflow

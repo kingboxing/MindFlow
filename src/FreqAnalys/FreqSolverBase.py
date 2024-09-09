@@ -63,7 +63,7 @@ class FreqencySolverBase(NSolverBase):
         
         SetInitialCondition(0, ic=ic, fw=self.eqn.fw[0], timestamp=timestamp)
         
-    def _form_LNS_equations(self, s):
+    def _form_LNS_equations(self, s, sz = None):
         """
         Form the UFL expression of a linearized Navier-Stokes system.
 
@@ -71,21 +71,34 @@ class FreqencySolverBase(NSolverBase):
         ----------
         s : int, float, complex
             The Laplace variable s, also known as the operator variable in the Laplace domain.
+        sz : complex or tuple/list of complex, optional
+            Spatial frequency parameters for quasi-analysis of the flow field. Default is None.
 
         Returns
         -------
         None.
 
         """
-        
-        # form Steady Linearised Incompressible Navier-Stokes Equations
-        leqn=self.eqn.SteadyLinear()
-        feqn=self.eqn.Frequency(s)
-        
-        for key in self.has_traction_bc.keys():
-            leqn += self.BoundaryTraction(self.eqn.tp, self.eqn.tu, self.eqn.nu, mark=self.has_traction_bc[key][0], mode=self.has_traction_bc[key][1])
-        
-        self.LNS=(leqn+feqn[0], feqn[1]) # (real part, imag part)
+        if self.element.dim == self.element.mesh.topology().dim():
+            # form Steady Linearised Incompressible Navier-Stokes Equations
+            leqn=self.eqn.SteadyLinear()
+            feqn=self.eqn.Frequency(s)
+            
+            for key in self.has_traction_bc.keys():
+                leqn += self.BoundaryTraction(self.eqn.tp, self.eqn.tu, self.eqn.nu, mark=self.has_traction_bc[key][0], mode=self.has_traction_bc[key][1])
+            
+            self.LNS=(leqn+feqn[0], feqn[1]) # (real part, imag part)
+            
+        elif self.element.dim > self.element.mesh.topology().dim():
+            # form quasi-Steady Linearised Incompressible Navier-Stokes Equations
+            leqn_r, leqn_i=self.eqn.QuasiSteadyLinear(sz)
+            feqn=self.eqn.Frequency(s)
+            
+            for key in self.has_traction_bc.keys():
+                leqn_r += self.BoundaryTraction(self.eqn.tp, self.eqn.tu, self.eqn.nu, mark=self.has_traction_bc[key][0], mode=self.has_traction_bc[key][1])
+            
+            self.LNS=(leqn_r+feqn[0], leqn_i+feqn[1])
+            
         
     def _assemble_pencil(self, Mat=None, symmetry=False, BCpart=None):
 

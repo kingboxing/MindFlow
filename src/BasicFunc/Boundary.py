@@ -48,7 +48,7 @@ class BoundaryCondition:
         ValueError
             If mark or value are not of the expected type.
         """
-        if not isinstance(mark, int):
+        if not isinstance(mark, (int, np.integer)):
             raise ValueError('Boundary mark must be an integer.')
         if not isinstance(value, value_types):
             raise ValueError(f'Value must be one of {value_types}.')
@@ -162,7 +162,7 @@ class BoundaryCondition:
         """
         self._validate_mark_and_value(mark, pre, value_types=(int, float, function.function.Function, function.expression.Expression))
         
-        self.bc_list[mark].update({'FunctionSpace': 'Q', 'Value': Constant(pre) if isinstance(pre, (int, float)) else pre, 'BoundaryTraction': (mark, mode)})# mode 1 for BoundaryTraction 
+        self.bc_list[mark].update({'FunctionSpace': 'Q', 'Value': Constant(pre) if isinstance(pre, (int, np.integer, float, np.floating)) else pre, 'BoundaryTraction': (mark, mode)})# mode 1 for BoundaryTraction 
 
         if self.element.type == 'TaylorHood':
             self.bc_list[mark]['FunctionSpace'] = self.bc_list[mark]['FunctionSpace'].replace('Q', 'Q.sub(1)')

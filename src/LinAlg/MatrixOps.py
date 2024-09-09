@@ -111,7 +111,7 @@ def AssembleMatrix(expr, bcs=[]):
 
     """
     A = PETScMatrix() # FEniCS using PETSc for matrix operation
-    assemble(expr, tensor=A) # store assembled matrix in A
+    assemble(expr, tensor=A, keep_diagonal=True) # store assembled matrix in A
     [bc.apply(A) for bc in bcs]
     # convert the format to CSR
     return ConvertMatrix(A)

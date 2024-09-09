@@ -101,9 +101,9 @@ class ResolventAnalysis(FreqencySolverBase):
 
         """
         P = MatP(self.element) # Prolongation matrix for the entire space of size nxk
-        M = MatM(self.element, bcs=self.set_boundarycondition.bc_list) # Weight matrix with bcs for forcing of size k x k
+        M = MatM(self.element, bcs=self.boundary_condition.bc_list) # Weight matrix with bcs for forcing of size k x k
         Qu = MatQ(self.element) # # Kinetic energy matrix of size k x k
-        Du = MatD(self,element, bound) # prolongation mat for subdomain restriction on velocity subspace
+        Du = MatD(self.element, bound) # prolongation mat for subdomain restriction on velocity subspace
         
         DQu = Du * Du.transpose() # square mat for subdomain restriction on velocity subspace
         
@@ -129,7 +129,7 @@ class ResolventAnalysis(FreqencySolverBase):
         vecs : numpy array
             Eigenvectors of the resolvent operator.
         """
-        imag_max=np.max(np.abs(np.imag(self.vals/np.real(self.vals))))
+        imag_max=np.max(np.abs(np.imag(vals/np.real(vals))))
         if imag_max>1e-9:
             info('Large imaginary part at s = {s} with max. imag. part (relative) = {imag_max}')
         
@@ -144,10 +144,10 @@ class ResolventAnalysis(FreqencySolverBase):
         self.response_mode=np.zeros((self.mats['P'].shape[0],vecs.shape[1]), dtype=vecs.dtype)
         
         for ind in range(self.energy_amp.size):
-            # Normalize eigenvector energy
-            vecs_energy = np.dot(vecs[:,ind].T.conj(), Qf.dot(vecs[:,ind]))
-            vecs[:, ind] = vecs[:,ind] / np.sqrt(np.real(vecs_energy))
-            print(vecs_energy)
+            # # Normalize eigenvector energy
+            # vecs_energy = np.dot(vecs[:,ind].T.conj(), Qf.dot(vecs[:,ind]))
+            # vecs[:, ind] = vecs[:,ind] / np.sqrt(np.real(vecs_energy))
+            # print(vecs_energy)
             
             # # Compute response mode from normalized prolonged force mode
             self.response_mode[:, ind] = self.Linv.A_lu.solve(self.mats['PM'].dot(vecs[:, ind]))/np.sqrt(self.energy_amp[ind])
@@ -155,7 +155,7 @@ class ResolventAnalysis(FreqencySolverBase):
         self.force_mode = self.mats['P'].dot(self.mats['Df'].dot(vecs))
         
     
-    def solve(self, k, s, Re=None, Mat=None, bound=[None, None], reuse=False):
+    def solve(self, k, s, Re=None, Mat=None, bound=[None, None], reuse=False, sz=None):
         """
         Solve the resolvent problem.
 
@@ -173,6 +173,8 @@ class ResolventAnalysis(FreqencySolverBase):
             Subdomain restrictions for the response and input, respectively. Default is [None, None].
         reuse : bool, optional
             Whether to reuse previous computations. Default is False.
+        sz : complex or tuple/list of complex, optional
+            Spatial frequency parameters for quasi-analysis of the flow field. Default is None.
         """
         
         self.s = s
@@ -182,7 +184,7 @@ class ResolventAnalysis(FreqencySolverBase):
             self.eqn.Re = Re
             
         if not reuse:
-            self._form_LNS_equations(s=s)
+            self._form_LNS_equations(s=s, sz=sz)
             self._assemble_pencil(Mat)
             self._initialize_solver(bound=bound[1]) # bound for forcing
             self._initialize_expr(bound=bound[0]) # bound for response
@@ -195,7 +197,7 @@ class ResolventAnalysis(FreqencySolverBase):
             return_eigenvectors=param['return_eigenvectors'], OPpart=param['OPpart']
             )
             
-        self._normalise_sol(s, vals, vecs)
+        self._format_solution(s, vals, vecs)
         
     def save(self, k, path):
         """

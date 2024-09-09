@@ -173,7 +173,7 @@ class SetInitialCondition:
         
         vec_noise = None
         if element_out.type == 'TaylorHood':
-            if noise is True or isinstance(noise, float):
+            if noise is True or isinstance(noise, (float, np.floating)):
                 pertub = (2 * np.random.rand(element_out.functionspace.dim()) - 1) * float(noise)
                 vec_noise = np.ascontiguousarray(pertub)
             elif isinstance(noise, np.ndarray):
@@ -182,7 +182,7 @@ class SetInitialCondition:
                 info("Invalid noise format (expected float or ndarray).")
                 
         elif element_out.type == 'Decoupled':
-            if noise is True or isinstance(noise, float): # if noise is np.random.rand 
+            if noise is True or isinstance(noise, (float, np.floating)): # if noise is np.random.rand 
                 pertub_v = (2 * np.random.rand(element_out.functionspace_V.dim()) - 1) * float(noise)
                 vec_noise = (np.ascontiguousarray(pertub_v),)
                 pertub_q = (2 * np.random.rand(element_out.functionspace_Q.dim()) - 1) * float(noise)

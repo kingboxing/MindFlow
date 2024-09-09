@@ -318,7 +318,7 @@ class DNS_IPCS(NSolverBase):
             Pressure boundary condition function or updated BC dictionary.
         """
         
-        if isinstance(mark, int):
+        if isinstance(mark, (int, np.integer)):
             normal = self._calculate_normal_vector(mark)
             norm = interpolate(normal, self.element.functionspace_V)
             RHS_mat = assemble(Constant(1.0 / self.eqn.Re) * dot(norm, sym(grad(self.eqn.tu)) * norm) * self.eqn.q * dx)

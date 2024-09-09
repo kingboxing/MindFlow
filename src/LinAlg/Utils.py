@@ -148,8 +148,8 @@ def is_symmetric(m):
     if m.shape[0] != m.shape[1]:
         raise ValueError('m must be a square matrix')
 
-    if not isinstance(m, coo_matrix):
-        m = coo_matrix(m)
+    if not isinstance(m, sp.coo_matrix):
+        m = sp.coo_matrix(m)
 
     r, c, v = m.row, m.col, m.data
     tril_no_diag = r > c
