@@ -8,7 +8,7 @@ Created on Fri Sep  6 23:59:16 2024
 
 from context import *
 
-print('------------ Testing Eigen-decomposition Solver ------------')
+print('------------ Testing Resolvent Analysis Solver ------------')
 
 tracemalloc.start()
 process = psutil.Process()

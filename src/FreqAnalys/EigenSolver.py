@@ -59,7 +59,7 @@ class EigenAnalysis(FreqencySolverBase):
         """
         Initialize the solver for the eigenvalue problem.
         
-        Ax = \lambda * M * x, A=-NS
+        Ax = λ * M * x, A=-NS
         Boundary Condition: u = 0
 
         Parameters
@@ -72,9 +72,12 @@ class EigenAnalysis(FreqencySolverBase):
         # Set up the eigenvalue problem: A*x = lambda * M * x, with A = -NS (Navier-Stokes)
         self.A = -self.pencil[0]
         self.M = self.pencil[1] # check if symmtery
+        if self.element.dim > self.element.mesh.topology().dim(): #quasi-analysis
+            self.A += -self.pencil[2].multiply(1j)
+            
         param=self.param[self.param['solver_type']]
         
-        #whether shift-invert mode
+        # shift-invert operator
         OP = self.A - sigma * self.M if sigma else self.A
         
         if inverse: # inversed eigenvalue?

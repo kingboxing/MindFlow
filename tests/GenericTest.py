@@ -1,37 +1,33 @@
-from dolfin import *
-from petsc4py import PETSc
+import numpy as np
 
-def create_identity_petsc_matrix_with_preallocation(n):
+def eliminate_duplicates(arr):
     """
-    Create an identity PETScMatrix of size n x n using petsc4py and wrap it in a FEniCS PETScMatrix.
-    Preallocate space for diagonal elements to handle boundary conditions.
+    Eliminate duplicates from the array and return the unique array and the indices of the eliminated duplicates.
     
     Parameters:
-    - n: Size of the identity matrix (n x n)
-
+    arr : array_like
+        Input array from which duplicates will be removed.
+        
     Returns:
-    - fenics_matrix: A FEniCS PETScMatrix containing the identity matrix.
+    unique_arr : ndarray
+        Array with duplicates removed.
+    duplicate_indices : list
+        Indices of the eliminated duplicates in the original array.
     """
-    # Step 1: Create an empty PETSc matrix of size n x n
-    A_petsc = PETSc.Mat().create()
+    # Get unique values and the indices of the first occurrence of each unique value
+    unique_arr, indices_first_occurrence = np.unique(arr, return_index=True)
+    
+    # Find all indices, then compute the difference to get duplicate indices
+    all_indices = np.arange(len(arr))
+    duplicate_indices = list(set(all_indices) - set(indices_first_occurrence))
+    
+    return unique_arr, sorted(duplicate_indices)
 
-    # Set the matrix size and type
-    A_petsc.setSizes([n, n])
-    A_petsc.setType("aij")  # Sparse AIJ format (compressed row storage)
+# Example usage
 
-    # Step 2: Preallocate space for the matrix
-    # Since this is an identity matrix, we need 1 non-zero entry per row (on the diagonal)
-    A_petsc.setPreallocationNNZ(30)  # 1 non-zero entry per row (for diagonal)
+arr = np.array([5, 3, 8, 3, 9, 1, 5, 8])
 
-    # Step 3: Set the diagonal elements to 1 manually
-    for i in range(n):
-        A_petsc.setValue(i, i, 1.0)  # Set the diagonal element A[i, i] = 1
+unique_arr, duplicate_indices = eliminate_duplicates(arr)
 
-    # Step 4: Assemble the PETSc matrix
-    A_petsc.assemble()
-
-    # Step 5: Wrap the PETSc matrix in a FEniCS PETScMatrix
-    fenics_matrix = PETScMatrix(A_petsc)
-
-    return fenics_matrix
-
+print("Unique array:", unique_arr)
+print("Indices of eliminated duplicates:", duplicate_indices)

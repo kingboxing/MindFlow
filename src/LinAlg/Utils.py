@@ -6,6 +6,7 @@ Created on Wed Aug 28 18:48:11 2024
 @author: bojin
 """
 from src.Deps import *
+from src.LinAlg.MatrixOps import InverseMatrixOperator
 
 def assign2(receiving_func, assigning_func):
     """
@@ -175,9 +176,118 @@ def is_symmetric(m):
     return check
 
 
+def del_zero_cols(mat):
+    """
+    Deletes columns in a sparse matrix with all elements equal to zero
+
+    Parameters
+    ----------
+    mat : scipy.sparse.csr_matrix/csc_matrix
+        DESCRIPTION.
+
+    Returns
+    -------
+    TYPE
+        DESCRIPTION.
+
+    """
+    return mat[:, mat.nonzero()[1]]
+
+def eigen_decompose(A, M=None, k=3, sigma=0.0, solver_params=None):
+    """
+    Perform eigen-decomposition on the system: λ*M*x = A*x or A*x = λ*x.
+
+    Parameters
+    ----------
+    A : scipy.sparse matrix
+        State matrix.
+    M : scipy.sparse matrix, optional
+        Mass matrix. If None, A*x = λ*x is solved.
+    k : int, optional
+        Number of eigenvalues to compute. Default is 3.
+    sigma : float, optional
+        Shift-invert parameter. Default is 0.0.
+    solver_params : dict, optional
+        Parameters for the eigenvalue solver, including:
+        - method: str (e.g., 'lu')
+        - lusolver: str (e.g., 'mumps')
+        - echo: bool (default False)
+        - which: str (default 'LM')
+        - v0: numpy array (default None)
+        - ncv: int (default None)
+        - maxiter: int (default None)
+        - tol: float (default 0)
+        - return_eigenvectors: bool (default True)
+        - OPpart: None or str (default None)
+
+    Returns
+    -------
+    vals : numpy array
+        Eigenvalues.
+    vecs : numpy array
+        Eigenvectors.
+    """
+    if solver_params is None:
+        solver_params = {}
+
+    # Default parameters for eigenvalue solver
+    default_params = {
+        'method': 'lu',
+        'lusolver': 'mumps',
+        'echo': False,
+        'which': 'LM',
+        'v0': None,
+        'ncv': None,
+        'maxiter': None,
+        'tol': 0,
+        'return_eigenvectors': True,
+        'OPpart': None
+    }
+
+    # Update default parameters with user-provided ones
+    solver_params = {**default_params, **solver_params}
+
+    # Shift-invert operator
+    OP = A - sigma * M if sigma else A
+
+    OPinv = None
+    if sigma is not None:
+        # Shift-invert mode requires an inverse operator
+        info('Internal Shift-Invert Mode Solver is active')
+        if solver_params['method'] == 'lu':
+            info(f"LU decomposition using {solver_params['lusolver'].upper()} solver...")
+            OPinv = InverseMatrixOperator(OP, lusolver=solver_params['lusolver'], echo=solver_params['echo'])
+            info('Done.')
+        else:
+            info('Iterative solver is pending development.')
+
+    # Perform eigen-decomposition using scipy.sparse.linalg.eigs
+    return spla.eigs(A, k=k, M=M, Minv=None, OPinv=OPinv, sigma=sigma, which=solver_params['which'],
+                     v0=solver_params['v0'], ncv=solver_params['ncv'], maxiter=solver_params['maxiter'],
+                     tol=solver_params['tol'], return_eigenvectors=solver_params['return_eigenvectors'],
+                     OPpart=solver_params['OPpart'])
     
+def sort_complex(a):
+    """
+    Sort a complex array based on the real part, then the imaginary part.
     
+    Parameters:
+    a : array_like
+        Input complex array to be sorted.
+        
+    Returns:
+    sorted_array : ndarray
+        The input array sorted in descending order, first by real part, then by imaginary part.
+    index_sort : ndarray
+        Indices that sort the original array in descending order.
+    """
+    # Get the indices that would sort the array based on real part and then imaginary part
+    index_sort = np.lexsort((a.imag, a.real))[::-1]  # Reverse for descending order
     
+    # Use the sorted indices to get the sorted array
+    sorted_array = a[index_sort]
+    
+    return sorted_array, index_sort
     
     
     

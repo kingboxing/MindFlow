@@ -66,6 +66,9 @@ class ResolventAnalysis(FreqencySolverBase):
         param = self.param[self.param['solver_type']]
         # matrix of the resolvent operator
         self.LHS = self.pencil[0] + self.pencil[1].multiply(1j)
+        if self.element.dim > self.element.mesh.topology().dim(): #quasi-analysis
+            self.LHS += self.pencil[2].multiply(1j)
+        
         # Prolongation matrix for subdomain restriction (input)
         Df = MatD(self.element, bound) 
         Qf = Df.transpose()*MatQ(self.element)*Df # Input energy matrix of size m x m

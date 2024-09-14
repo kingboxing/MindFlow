@@ -53,6 +53,8 @@ class FrequencyResponse(FreqencySolverBase):
         """
         param = self.param[self.param['solver_type']]
         self.LHS = self.pencil[0] + self.pencil[1].multiply(1j)
+        if self.element.dim > self.element.mesh.topology().dim(): #quasi-analysis
+            self.LHS += self.pencil[2].multiply(1j)
         
         if param['method'] == 'lu':
             info(f"LU decomposition using {param['lusolver'].upper()} solver...")

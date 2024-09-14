@@ -15,13 +15,15 @@ from src.Deps import *
 
 # MindFlow pkgs
 from src.BasicFunc.ElementFunc import TaylorHood
-from src.BasicFunc.Boundary import SetBoundary, SetBoundaryCondition, BoundaryCondition
+from src.BasicFunc.Boundary import SetBoundary, SetBoundaryCondition, BoundaryCondition, Boundary
 from src.NSolver.SteadySolver import NewtonSolver
 from src.NSolver.TransiSolver import DNS_IPCS
 from src.FreqAnalys.FreqSolver import FrequencyResponse
 from src.LinAlg.VectorAsm import VectorGenerator
 from src.FreqAnalys.EigenSolver import EigenAnalysis
 from src.FreqAnalys.ResolSolver import ResolventAnalysis
+from src.OptimControl.SystemModel import StateSpaceDAE2
+
 
 import tracemalloc
 import psutil

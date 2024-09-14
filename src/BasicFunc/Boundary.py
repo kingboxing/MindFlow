@@ -13,7 +13,38 @@ This class provides subclasses of FEniCS interface of
 defining and marking boundaries 
 """
 #%%
-class BoundaryCondition:
+class Boundary:
+    """
+    Define boundary for FEniCS simulations.
+    """
+    def __init__(self):
+        """
+        initilise boundary list
+
+        """
+        self.bc_list = {}
+        
+    def define(self, mark, name, locs):
+        """
+        define boundary
+
+        Parameters
+        ----------
+        mark : int
+            mark of the boundary.
+        name : str
+            name of the boundary.
+        locs : str
+            location of the boundary.
+
+        Returns
+        -------
+        None.
+
+        """
+        self.bc_list.update({mark:{'name': name, 'location': locs}})
+        
+class BoundaryCondition(Boundary):
     """
     A factory of boundary conditions for FEniCS simulations.
     """
@@ -26,8 +57,7 @@ class BoundaryCondition:
         element : object
             The finite element used in the simulation.
         """
-        
-        self.bc_list={} # a dict of BCs
+        super().__init__()
         self.element=element
         
     def _validate_mark_and_value(self, mark, value, value_types=(tuple, function.function.Function, function.expression.Expression)):
@@ -187,6 +217,7 @@ class BoundaryCondition:
 
         """
         self.PressureInlet(mark, pre, mode)
+        
 
 #%%
 

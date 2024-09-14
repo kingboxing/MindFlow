@@ -89,7 +89,7 @@ class FreqencySolverBase(NSolverBase):
             
             self.LNS=(leqn+feqn[0], feqn[1]) # (real part, imag part)
             
-        elif self.element.dim > self.element.mesh.topology().dim():
+        elif self.element.dim > self.element.mesh.topology().dim(): # quasi-analysis
             # form quasi-Steady Linearised Incompressible Navier-Stokes Equations
             leqn_r, leqn_i=self.eqn.QuasiSteadyLinear(sz)
             feqn=self.eqn.Frequency(s)
@@ -97,7 +97,7 @@ class FreqencySolverBase(NSolverBase):
             for key in self.has_traction_bc.keys():
                 leqn_r += self.BoundaryTraction(self.eqn.tp, self.eqn.tu, self.eqn.nu, mark=self.has_traction_bc[key][0], mode=self.has_traction_bc[key][1])
             
-            self.LNS=(leqn_r+feqn[0], leqn_i+feqn[1])
+            self.LNS=(leqn_r+feqn[0], feqn[1], leqn_i)
             
         
     def _assemble_pencil(self, Mat=None, symmetry=False, BCpart=None):
@@ -128,14 +128,12 @@ class FreqencySolverBase(NSolverBase):
             Ar = AssembleSystem(self.LNS[0], dummy_rhs, self.boundary_condition.bc_list)[0]
             Ai = AssembleSystem(self.LNS[1], dummy_rhs, self.boundary_condition.bc_list)[0]
             I_bc = AssembleSystem(Constant(0.0)*self.LNS[1], dummy_rhs,self.boundary_condition.bc_list)[0]
+
         else:
-            # assemble the real part
-            Ar = AssembleMatrix(self.LNS[0],self.boundary_condition.bc_list)
-            # assemble the imag part
-            Ai = AssembleMatrix(self.LNS[1],self.boundary_condition.bc_list) 
-            # matrix has only ones in diagonal for rows specified by the boundary condition
-            I_bc = AssembleMatrix(Constant(0.0)*self.LNS[1],self.boundary_condition.bc_list)
-        
+            Ar = AssembleMatrix(self.LNS[0],self.boundary_condition.bc_list) # assemble the real part
+            Ai = AssembleMatrix(self.LNS[1],self.boundary_condition.bc_list) # assemble the imag part
+            I_bc = AssembleMatrix(Constant(0.0)*self.LNS[1],self.boundary_condition.bc_list) # matrix has only ones in diagonal for rows specified by the boundary condition
+
         if Mat is not None:# feedback loop
             Ar += Mat # Mat need to be BC applied
             temp_mat = ConvertMatrix(Ar,flag='Mat2PETSc')
@@ -157,5 +155,13 @@ class FreqencySolverBase(NSolverBase):
             
         # Complex matrix with boundary conditions
         pencil = (Ar.tocsc(), Ai.tocsc())
+        
+        if self.element.dim > self.element.mesh.topology().dim():
+            if symmetry:
+                Ai_quasi = AssembleSystem(self.LNS[2], dummy_rhs, self.boundary_condition.bc_list)[0] - I_bc
+            else:
+                Ai_quasi= AssembleMatrix(self.LNS[2],self.boundary_condition.bc_list) - I_bc
+                
+            pencil += (Ai_quasi.tocsc(),)
         # Convert to CSC format for efficient LU decomposition
         self.pencil = pencil

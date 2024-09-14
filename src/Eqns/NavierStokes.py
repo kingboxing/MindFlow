@@ -259,6 +259,10 @@ class Incompressible:
     def Transient(self, dt, scheme="backward", order=1, implicit=True):
         """
         Define the transient part using a time discretization scheme.
+        
+        At timestep n+1:
+        if scheme == 'backward' and order == 1:
+            du/dt = u_{n+1} - u_{n}
 
         Parameters
         ----------
