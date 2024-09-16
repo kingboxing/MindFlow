@@ -4,11 +4,17 @@
 Created on Sat Sep 14 22:19:50 2024
 
 @author: bojin
+
+Linear Quadratic Regulator (LQR) Solver
+
+This module provides the LQRSolver class for solving the LQR problem for Index-2 systems,
+utilizing the M.E.S.S. library to solve generalized Riccati equations.
 """
 
 from src.Deps import *
 from src.OptimControl.RiccatiSolver import GRiccatiDAE2Solver
 from src.OptimControl.BernoulliSolver import BernoulliFeedback
+from src.LinAlg.Utils import distribute_numbers
 try:
     import pymess as mess
 except ImportError:
@@ -16,20 +22,19 @@ except ImportError:
  
     
 class LQRSolver(GRiccatiDAE2Solver):
+    """
+    Solver for the Linear Quadratic Regulator (LQR) problem for Index-2 systems.
+    """
     def __init__(self, ssmodel):
         """
-        Solver for LQR problem of a Index 2 system
+        Initialize the LQR solver with the state-space model.
 
         Parameters
         ----------
         ssmodel : dict or StateSpaceDAE2
-            DESCRIPTION.
-
-        Returns
-        -------
-        None.
-
+            State-space model containing system matrices.
         """
+        
         super().__init__(self._initialise_model(ssmodel))
         self._k0=BernoulliFeedback(ssmodel)
         self.param['solver_type']='lqr_solver'
@@ -37,40 +42,35 @@ class LQRSolver(GRiccatiDAE2Solver):
         
     def _initialise_model(self, ssmodel):
         """
-        initialise model with necessary matrices
+        Initialize the model with necessary matrices.
 
         Parameters
         ----------
         ssmodel : dict or StateSpaceDAE2
-            DESCRIPTION.
+            State-space model containing system matrices.
 
         Returns
         -------
-        model : TYPE
-            DESCRIPTION.
-
+        dict
+            Initialized model with system matrices.
         """
+        
         model = {'A': ssmodel['A'],
                  'M': ssmodel['M'],
                  'G': ssmodel['G'],
                  'B': ssmodel['B'],
                  'C': ssmodel['C']}
         return model
-    
-    def Init_Feedback(self):
-        param = {'nm.k0': self._k0.solve(transpose=False)}
-        self.update_parameters(param)
-        
         
     def _default_param(self):
         """
-        initialise default parameters
+        Initialize default parameters for the LQR solver.
 
         Returns
         -------
-        None.
-
+        None
         """
+        
         param_default = {'type': mess.MESS_OP_TRANSPOSE,
                          'adi.memory_usage': mess.MESS_MEMORY_HIGH,
                          'adi.paratype': mess.MESS_LRCFADI_PARA_ADAPTIVE_V,
@@ -83,54 +83,168 @@ class LQRSolver(GRiccatiDAE2Solver):
                          'nm.res2_tol': 1e-5,
                          'nm.maxit': 30,
                          #'nm.k0': None #Initial Feedback
+                         'lusolver':mess.MESS_DIRECT_UMFPACK_LU
                          }
         self.update_parameters(param_default)
         
-    def ControlPenalty(self, beta):
+    def init_feedback(self):
         """
-        magitude of the control penalty
+        Initialize feedback using Bernoulli feedback solver.
+        """
+        param = {'nm.k0': self._k0.solve(transpose=False)}
+        self.update_parameters(param)
+        
+    def control_penalty(self, beta):
+        """
+        Set the magnitude of control penalty in the LQR formulation.
         
         penalisation of the control signal: R^{-1/2} in the formulation
-        ----------------------
-        beta: int or float or 1D array
-            magitude of the control penalty
+
+        Parameters
+        ----------
+        beta : int, float, or 1D array
+            Magnitude of control penalty.
+
+        Raises
+        ------
+        TypeError
+            If the provided beta is not a valid type.
         """
+
         n=self.Model['B'].shape[1]
         if isinstance(beta, (int, np.integer, float, np.floating)):
             mat = 1.0/beta * np.identity(n)
         elif isinstance(beta, (list, tuple, np.ndarray)):
             mat = np.diag(np.reciprocal(beta[:n]))
         else:
-            raise TypeError('Wrong type of control penalty.')
+            raise TypeError('Invalid type for control penalty.')
         
         self.Model['B_pen_mat'] = mat
         self.Model['B'] = self.Model['B'] @ mat 
     
-    def Measure(self, Cz = None):
+    def measure(self, Cz = None):
         """
-        square root of response weight matrix: Q^{1/2}
-        -----------------------
-        Cz: 1d array or ndarray
+        Set the square root of the response weight matrix for the LQR formulation.
+
+        Parameters
+        ----------
+        Cz : 1D array or ndarray
+            Matrix used to represent the response weight.
+        
+        Raises
+        ------
+        ValueError
+            If the shape of Cz does not match the shape of the existing C matrix.
         """
         
         if Cz is not None and Cz.shape[1] == self.Model['C'].shape[1]:
             self.Model['C'] = Cz
         else:
-            raise ValueError('Wrong shape of measurement')
+            raise ValueError('Incorrect shape for measurement matrix.')
                
-    def Regulator(self):
+    def regulator(self):
         """
-        compute linear quadratic regulator from the solution of LQR problem
+        Compute the linear quadratic regulator (LQR) from the solution of the LQR problem.
 
         Returns
         -------
-        Kr : TYPE
-            DESCRIPTION.
-
+        Kr : numpy array
+            Linear Quadratic Regulator matrix.
         """
-        Kr = self.Model['B_pen_mat'] * self._B.transpose() * self.facZ * self.facZ.transpose()
-        return Kr
+
+        return self.Model['B_pen_mat'] @ self.Model['B'].T @ self.facZ @ self.facZ.T
     
-    def iter_solve(self, num_iter = 2):
-        pass
+    def solve(self, MatQ=None, delta = -0.02, pid = None, Kf = None):
+        """
+        Solve the LQR problem and return results.
+
+        Parameters
+        ----------
+        MatQ : sparse matrix, optional
+            Factor of the weight matrix used to evaluate the H2 norm. Default is None.
+        delta : float, optional
+            Shift-invert parameter for solving Riccati equation. Default is -0.02.
+        pid : int, optional
+            Number of processes for H2 norm computation. Default is None.
+        Kf: numpy array, optional
+            Kalman Filter estimator matrix. Default is None.
+
+        Returns
+        -------
+        Kr : numpy array
+            Linear Quadratic Regulator matrix.
+        Status : list
+            Status of each iteration.
+        H2NormS : float
+            Square of the H2 norm.
+        norm_lqe : numpy array
+            LQE norm.
+        """
+        return self.iter_solve(1, MatQ, delta, pid, Kr)
     
+    def iter_solve(self, num_iter = 1, MatQ=None, delta = -0.02, pid = None, Kf = None):
+        """
+        Solve the LQR problem iteratively using an accumulation method.
+
+        Parameters
+        ----------
+        num_iter : int, optional
+            Number of iterations to perform. Default is 1.
+        MatQ : sparse matrix, optional
+            Matrix used to compute the H2 norm. Default is None.
+        delta : float, optional
+            Shift-invert parameter for solving Riccati equation. Default is -0.02.
+        pid : int, optional
+            Number of processes for H2 norm computation. Default is None.
+        Kf : numpy array, optional
+            Kalman Filter estimator matrix. Default is None.
+
+        Returns
+        -------
+        Kr : numpy array
+            Linear Quadratic Regulator matrix.
+        Status : list
+            Status of each iteration.
+        H2NormS : float
+            Square of the H2 norm.
+        norm_lqe : numpy array
+            LQE norm.
+        """
+        # get original matrices
+        C = self.Model['C'].copy()
+        # allocate the number of measure modes
+        n = C.shape[0]
+        alloc = distribute_numbers(n, num_iter)
+        # initilise results
+        Kr=np.zeros(self.Model['B'].T.shape)
+        Status=[]
+        H2NormS=0
+        norm_lqe=None
+        
+        for i in range(num_iter):
+            if i > 0:
+                self.Model['A'] += - sp.csr_matrix(self.Model['B'])  @ sp.csr_matrix(Kr_sub @ self.Model['M'])
+            self.Model['A'].sort_indices() # sort data indices, prevent unmfpack error -8
+            # allocate measure modes
+            ind_s = int(np.sum(alloc[:i]))
+            ind_e = ind_s + alloc[i]
+            self.measure(C[ind_s:ind_e, :])
+            # now self._C = C[:, ind_s:ind_e]
+            status_sub = self.solve_riccati(delta)
+            Kr_sub = self.regulator()
+            # collect results
+            Status.append(status_sub)
+            Kr += Kr_sub
+            
+            if MatQ is not None:
+                H2NormS += self.squared_h2norm(MatQ, pid)
+            
+            if Kf is not None:
+                norm_lqe = self.normvec_T(Kf) if i == 0 else norm_lqe + self.normvec_T(Kf)
+
+            # delete results to save memory
+            del self.facZ
+            gc.collect()
+        
+        Status.append({'alloc_mode': alloc})
+        return Kr, Status, H2NormS, norm_lqe

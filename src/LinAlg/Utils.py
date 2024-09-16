@@ -290,4 +290,27 @@ def sort_complex(a):
     return sorted_array, index_sort
     
     
+def distribute_numbers(n, k):
+    """
+    Distribute n numbers into k groups as evenly as possible.
     
+    Parameters:
+    n : int
+        The total number of elements to distribute.
+    k : int
+        The number of groups.
+        
+    Returns:
+    list of int
+        A list where each element represents the number of elements in that group.
+    """
+    # Base size of each group
+    base_size = n // k
+    
+    # Number of groups that will get an extra element
+    remainder = n % k
+    
+    # Create the distribution list
+    distribution = [base_size + 1 if i < remainder else base_size for i in range(k)]
+    
+    return distribution
