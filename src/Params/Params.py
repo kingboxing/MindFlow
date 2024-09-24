@@ -6,7 +6,7 @@ Created on Sun Jan  7 17:24:05 2024
 @author: bojin
 """
 
-from src.Deps import *
+from ..Deps import *
 
 class Params:
     """

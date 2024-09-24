@@ -6,14 +6,13 @@ Created on Wed Oct 18 15:10:37 2023
 @author: bojin
 """
 
-from src.Deps import *
+from ..Deps import *
 
-from src.NSolver.SolverBase import NSolverBase
+from ..NSolver.SolverBase import NSolverBase
 
-from src.BasicFunc.ElementFunc import TaylorHood
-from src.BasicFunc.Boundary import SetBoundary, SetBoundaryCondition
-from src.BasicFunc.InitialCondition import SetInitialCondition
-from src.Eqns.NavierStokes import Incompressible
+from ..BasicFunc.ElementFunc import TaylorHood
+from ..BasicFunc.Boundary import SetBoundary, SetBoundaryCondition
+from ..BasicFunc.InitialCondition import SetInitialCondition
 
 """
 This module provides the classes that solve Navier-Stokes equations

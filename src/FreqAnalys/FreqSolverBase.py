@@ -7,14 +7,13 @@ Created on Wed Sep  4 17:07:07 2024
 """
 
 
-from src.Deps import *
+from ..Deps import *
 
-from src.NSolver.SolverBase import NSolverBase
-from src.BasicFunc.ElementFunc import TaylorHood
-from src.BasicFunc.Boundary import SetBoundary, SetBoundaryCondition
-from src.BasicFunc.InitialCondition import SetInitialCondition
-from src.Eqns.NavierStokes import Incompressible
-from src.LinAlg.MatrixOps import AssembleMatrix, AssembleVector, ConvertVector,ConvertMatrix, AssembleSystem, TransposePETScMat, InverseMatrixOperator, SparseLUSolver
+from ..NSolver.SolverBase import NSolverBase
+from ..BasicFunc.ElementFunc import TaylorHood
+from ..BasicFunc.Boundary import SetBoundary, SetBoundaryCondition
+from ..BasicFunc.InitialCondition import SetInitialCondition
+from ..LinAlg.MatrixOps import AssembleMatrix, AssembleVector, ConvertVector,ConvertMatrix, AssembleSystem, TransposePETScMat, InverseMatrixOperator, SparseLUSolver
 
 #%%
 class FreqencySolverBase(NSolverBase):
@@ -38,7 +37,7 @@ class FreqencySolverBase(NSolverBase):
         
         element = TaylorHood(mesh = mesh, order = order, dim = dim, constrained_domain = constrained_domain) # initialise finite element space
         super().__init__(mesh, element, Re, None, None)
-       
+
         # boundary condition
         self.boundary_condition = SetBoundaryCondition(self.element.functionspace, self.boundary)
         # init param
@@ -106,14 +105,14 @@ class FreqencySolverBase(NSolverBase):
         """
         Assemble the matrix pencil (sM+NS) of the linear system.
         
-        u=(sM+NS)^-1*f where RHS=f, Resp=u
+        u=(sM+NS)^-1*f where RHS=f, Resp=u, sM = Ai, NS = Ar
         
         Boundary Condition: u = value/0.0
         
         Parameters
         ----------
         Mat : scipy.sparse matrix, optional
-            Feedback matrix (if control is applied: sM+NS+BC). The default is None.
+            Feedback matrix (if control is applied: sM+NS+Mat). The default is None.
         symmetry : bool, optional
             if assemble matrices in a symmetric fashion. The default is False.
         BCpart : ‘r’ or ‘i’, optional

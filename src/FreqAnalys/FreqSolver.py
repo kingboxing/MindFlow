@@ -11,12 +11,11 @@ This module provides classes for solving frequency responses of linearized Navie
 
 """
 
-from src.Deps import *
+from ..Deps import *
 
-from src.FreqAnalys.FreqSolverBase import FreqencySolverBase
-from src.Eqns.NavierStokes import Incompressible
-from src.LinAlg.MatrixOps import AssembleMatrix, AssembleVector, ConvertVector,ConvertMatrix, InverseMatrixOperator
-from src.LinAlg.Utils import allclose_spmat, get_subspace_info, find_subspace_index
+from ..FreqAnalys.FreqSolverBase import FreqencySolverBase
+from ..LinAlg.MatrixOps import AssembleMatrix, AssembleVector, ConvertVector,ConvertMatrix, InverseMatrixOperator
+from ..LinAlg.Utils import allclose_spmat, get_subspace_info, find_subspace_index
 
 #%%
 class FrequencyResponse(FreqencySolverBase):

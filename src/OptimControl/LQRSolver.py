@@ -11,10 +11,10 @@ This module provides the LQRSolver class for solving the LQR problem for Index-2
 utilizing the M.E.S.S. library to solve generalized Riccati equations.
 """
 
-from src.Deps import *
-from src.OptimControl.RiccatiSolver import GRiccatiDAE2Solver
-from src.OptimControl.BernoulliSolver import BernoulliFeedback
-from src.LinAlg.Utils import distribute_numbers
+from ..Deps import *
+from ..OptimControl.RiccatiSolver import GRiccatiDAE2Solver
+from ..OptimControl.BernoulliSolver import BernoulliFeedback
+from ..LinAlg.Utils import distribute_numbers
 try:
     import pymess as mess
 except ImportError:

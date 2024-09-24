@@ -23,8 +23,9 @@ from src.LinAlg.VectorAsm import VectorGenerator
 from src.FreqAnalys.EigenSolver import EigenAnalysis
 from src.FreqAnalys.ResolSolver import ResolventAnalysis
 from src.OptimControl.SystemModel import StateSpaceDAE2
+from src.OptimControl.BernoulliSolver import BernoulliFeedback
 
-
+import matplotlib.pyplot as plt
 import tracemalloc
 import psutil
 import time

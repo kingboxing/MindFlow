@@ -6,7 +6,7 @@ Created on Wed Oct 18 17:07:48 2023
 @author: bojin
 """
 
-from src.Deps import *
+from ..Deps import *
 
 class Incompressible:
     
@@ -169,7 +169,7 @@ class Incompressible:
 
         Parameters
         ----------
-        sz : complex or tuple/list of complex, optional
+        sz : complex or tuple/list of complex with only imaginary part, optional
             Spatial frequency parameters for quasi-analysis of the flow field. Default is None.
 
         Returns
@@ -193,6 +193,7 @@ class Incompressible:
         #                Constant(1.0 / self.rho) * (grad(self.v[0])[0]+grad(self.v[1])[1]) * self.tp + 
         #                self.nu * inner(grad(self.tu), grad(self.v)) + self.nu*lambda_z*lambda_z*inner(self.tu,self.v) +
         #                (grad(self.tu[0])[0]+grad(self.tu[1])[1]) * self.q) * dx # real part
+        
         #     # QSLNS_r = (inner(dot(self.u[0:indz], nabla_grad(self.tu)[0:indz, :]), self.v) +
         #     #            inner(dot(self.tu[0:indz], nabla_grad(self.u)[0:indz, :]), self.v) -
         #     #            Constant(1.0 / self.rho)  * self.tp * div(self.v[0:indz]) + 
@@ -204,23 +205,47 @@ class Incompressible:
         self.nu = Constant(1.0/self.Re)
         if isinstance(sz, (complex, np.complexfloating)): # 3D/2d -> 2D/1D
             sz = (sz, )
-        elif isinstance(sz, (tuple, list)) and len(sz)>2: 
-            raise ValueError('The maximum dimension reduction is limited to two.')
+        elif isinstance(sz, (tuple, list)) and len(sz)>1: # pending for two
+            raise ValueError('The maximum dimension reduction is limited to one.')
+        else:
+            raise TypeError('Invalid type of Spatial frequency parameters for quasi-analysis.')
         
-        indz = self.element.dim - len(sz)
         QSLNS_i = 0
         QSLNS_r = 0
-        
+        indz = self.element.dim - len(sz)
         for lambda_ in sz:
+            lambda_ = Constant(np.imag(lambda_))
             QSLNS_i += Constant(1.0 / self.rho) * lambda_*self.tp*self.v[indz]*dx + lambda_*self.tu[indz]*self.q*dx # imag part
-            QSLNS_r += self.nu*lambda_*lambda_*inner(self.tu,self.v)
+            QSLNS_r += self.nu*lambda_*lambda_*inner(self.tu,self.v) * dx
+            indz += 1
             
-        QSLNS_r = (inner(dot(self.u[0:indz], nabla_grad(self.tu)[0:indz, :]), self.v) +
-                    inner(dot(self.tu[0:indz], nabla_grad(self.u)[0:indz, :]), self.v) -
-                    Constant(1.0 / self.rho)  * self.tp * div(self.v[0:indz]) + 
-                    self.nu * inner(grad(self.tu), grad(self.v)) +
-                    div(self.tu[0:indz]) * self.q) * dx # real part
+        # pending for two-dimension reduction
+        indz = self.element.dim - len(sz)
+        conv = 0 # convection term
+        pres = 0 # pressure term
+        cont = 0 # continuity term
+        for i in range(indz):
+            conv += (self.u[i] * nabla_grad(self.tu)[i,:]) + (self.tu[i] * nabla_grad(self.u)[i,:])
+            pres += grad(self.v[i])[i]
+            cont += grad(self.tu[i])[i]
             
+        QSLNS_r += (inner(conv, self.v) -
+                    Constant(1.0 / self.rho) * self.tp * pres + 
+                    self.nu * inner(grad(self.tu), grad(self.v)) + 
+                    cont * self.q) * dx # real part
+        
+            
+        # QSLNS_r += (inner((self.u[0] * nabla_grad(self.tu)[0,:])+(self.u[1] * nabla_grad(self.tu)[1,:]), self.v) +
+        #             inner((self.tu[0] * nabla_grad(self.u)[0,:])+(self.tu[1] * nabla_grad(self.u)[1,:]), self.v) -
+        #             Constant(1.0 / self.rho) * self.tp * (grad(self.v[0])[0]+grad(self.v[1])[1]) + 
+        #             self.nu * inner(grad(self.tu), grad(self.v)) + 
+        #             (grad(self.tu[0])[0]+grad(self.tu[1])[1]) * self.q) * dx # real part
+        
+        # QSLNS_r += (inner(dot(self.u[0:indz], nabla_grad(self.tu)[0:indz, :]), self.v) +
+        #             inner(dot(self.tu[0:indz], nabla_grad(self.u)[0:indz, :]), self.v) -
+        #             Constant(1.0 / self.rho)  * self.tp * div(self.v[0:indz]) + 
+        #             self.nu * inner(grad(self.tu), grad(self.v)) +
+        #             div(self.tu[0:indz]) * self.q) * dx # real part
         return QSLNS_r, QSLNS_i
             
             

@@ -1,1 +1,1 @@
-#
+# FERePack/src/__init__.py# This file can remain empty or contain package-level documentation if needed."""FERePack Source PackageThis folder contains all the source modules for the FERePack package."""# Optionally, you could put global variables or configuration settings here, if needed.

@@ -6,10 +6,10 @@ Created on Sun Feb 11 22:36:04 2024
 @author: bojin
 """
 
-from src.Deps import *
+from ..Deps import *
 
-from src.BasicFunc.Boundary import SetBoundary,BoundaryCondition
-from src.Eqns.NavierStokes import Incompressible
+from ..BasicFunc.Boundary import SetBoundary,BoundaryCondition
+from ..Eqns.NavierStokes import Incompressible
 
 
 class NSolverBase:

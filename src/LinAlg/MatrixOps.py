@@ -10,7 +10,12 @@ Created on Sat Aug 24 23:53:10 2024
 This module provides functions for matrix/vector conversion, assembling linear operators, and solving linear equations using various LU solvers.
 """
 
-from src.Deps import *
+from ..Deps import *
+
+try:
+    from scikits import umfpack
+except ImportError:
+    PyUMFPACK = False
 
 #%%
 """

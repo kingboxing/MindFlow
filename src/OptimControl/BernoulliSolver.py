@@ -10,8 +10,8 @@ This module provides the BernoulliFeedback class for computing feedback control
 using a generalized algebraic Bernoulli equation and eigen-decomposition techniques.
 
 """
-from src.Deps import *
-from src.LinAlg.Utils import eigen_decompose, sort_complex
+from ..Deps import *
+from ..LinAlg.Utils import eigen_decompose, sort_complex
 
 class BernoulliFeedback:
     """
@@ -28,10 +28,8 @@ class BernoulliFeedback:
             Dictionary containing the mass matrix 'Mass', the state matrix 'State', and
             optionally other components of the state-space model.
         """
-        self.Mass = ssmodel['Mass']
-        self.State = ssmodel['State']
-        self.SSModel = ssmodel
-            
+        self._assign_model(ssmodel)
+        self.param={}
         self.param['solver_type']='bernoull_feedback'
         self.param['bernoull_feedback']={'method': 'lu', 
                                         'lusolver': 'mumps',
@@ -45,6 +43,33 @@ class BernoulliFeedback:
                                         'tol': 0,
                                         'return_eigenvectors': True,
                                         'OPpart': None}
+        
+    def _assign_model(self, ssmodel):
+        """
+        Assign the state-space model.
+
+        Parameters
+        ----------
+        ssmodel : dict or StateSpaceDAE2
+            State-space model.
+
+        Raises
+        ------
+        TypeError
+            If the input is not a valid state-space model.
+        """
+        
+        if isinstance(ssmodel, dict):
+            self.Mass = ssmodel['Mass']
+            self.State = ssmodel['State']
+            self.SSModel = ssmodel
+        elif isinstance(self.ssmodel, StateSpaceDAE2):
+            self.Mass = ssmodel.SSModel['Mass']
+            self.State = ssmodel.SSModel['State']
+            self.SSModel = ssmodel.SSModel
+        else:
+            raise TypeError('Invalid type for state-space model.')
+        
     
     def _real_projection_basis(self, vals, vecs):
         """
@@ -62,8 +87,9 @@ class BernoulliFeedback:
         Basis : numpy array
             Real-valued projection basis.
         """
+        
         arr = np.concatenate((np.real(vals), np.abs(np.imag(vals))))
-        mat = np.concatenate((np.real(vecs), np.imag(vals)), axis = 1)
+        mat = np.concatenate((np.real(vecs), np.imag(vecs)), axis = 1)
         _, indices_unique = np.unique(arr, return_index=True)
         
         Basis = mat[:,indices_unique]
@@ -133,8 +159,8 @@ class BernoulliFeedback:
             M_tilda = M_tilda.T
             A_tilda = A_tilda.T
             B_tilda = HR.T.conj() @ np.pad(B, ((0, self.Mass.shape[0] - B.shape[0]), (0, 0)), 'constant', constant_values=0)
-
-        Xare=sla.solve_continuous_are(A_tilda, B_tilda, np.zeros_like(A_tilda), np.identity(B_tilda.shape[1]), e=M_tilda)
+        
+        Xare=sla.solve_continuous_are(A_tilda, B_tilda, np.zeros_like(A_tilda), np.identity(B_tilda.shape[1]), e=M_tilda, s=None, balanced=True)
         
         if transpose: # LQE problem
             return self.Mass.T @ HR @ Xare @ B_tilda
@@ -157,6 +183,7 @@ class BernoulliFeedback:
             Feedback vector of shape (k, m).
         """
         feedback = self._bernoulli_solver(transpose)
+        info('Bernoulli Feedback Solver Finished.')
         if transpose:
             return feedback[:self.SSModel['C'].shape[1], :].T
         
@@ -192,11 +219,12 @@ class BernoulliFeedback:
             A=self.State.T
             BC=self.SSModel['C'].T
             
-        B_sp = sp.csr_matrix(np.pad(B,((0,self.Mass.shape[0]-BC.shape[0]),(0,0)),'constant',constant_values=0))
-        K_sp = sp.csr_matrix(np.pad(k0,((0,0),(0,self.Mass.shape[0]-k0.shape[0])),'constant',constant_values=0))
-        B_sp.eliminate_zeros()
-        K_sp.eliminate_zeros()
-        Mat = B_sp @ K_sp
-            
-        return eigen_decompose(A-Mat, M, k=k, sigma=sigma, solver_params=param)
-    
+        if k0 is not None:
+            B_sp = sp.csr_matrix(np.pad(BC,((0,M.shape[0]-BC.shape[0]),(0,0)),'constant',constant_values=0))
+            K_sp = sp.csr_matrix(np.pad(k0,((0,0),(0,M.shape[0]-k0.shape[1])),'constant',constant_values=0))
+            B_sp.eliminate_zeros()
+            K_sp.eliminate_zeros()
+            Mat = B_sp @ K_sp
+            return eigen_decompose(A-Mat, M, k=k, sigma=sigma, solver_params=param)
+        else:
+            return eigen_decompose(A, M, k=k, sigma=sigma, solver_params=param)

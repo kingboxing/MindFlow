@@ -6,7 +6,7 @@ Created on Wed Oct 18 11:06:27 2023
 @author: bojin
 """
 
-from src.Deps import *
+from ..Deps import *
 
 """
 This class provides subclasses of FEniCS interface of

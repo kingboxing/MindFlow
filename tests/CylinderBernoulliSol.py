@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Tue Sep 10 14:45:33 2024
+Created on Wed Sep 18 15:14:16 2024
 
 @author: bojin
 """
 
 from context import *
 
-print('------------ Testing state-space model ------------')
+print('------------ Testing Bernoulli Feedback Control Solver ------------')
 tracemalloc.start()
 process = psutil.Process()
 cpu_usage_before = psutil.cpu_percent(interval=None, percpu=True)
@@ -44,39 +44,37 @@ data = TimeSeries(datapath)
 data.retrieve(element.w.vector(), 0.0)
 # set baseflow
 model.set_baseflow(ic=element.w)
+# IO vec generator
+vec_gen=VectorGenerator(model.element, model.boundary_condition)
+input_vec, coord =vec_gen.unit_vector((0.6,0.6), 0)
+output_vec=vec_gen.point_vector((3.0,0.0), 1)
+
 # assemble model
-model.assemble_model(Re=Re)
+model.assemble_model(input_vec=input_vec, output_vec=output_vec, Re=Re)
+InitFeedback = BernoulliFeedback(model.SSModel)
+transpose=True # False for LQR, True for LQE
+k0 = InitFeedback.solve(transpose=transpose) 
 
-vals, vecs = model.validate_eigs(k=2, param={'which': 'LR'})
+vals_us, vecs_us = InitFeedback.validate_eigs(None, k=100, sigma=0.0, transpose=transpose)
+vals, vecs = InitFeedback.validate_eigs(k0, k=100, sigma=0.0, transpose=transpose)
 
-vecs_m = vecs 
+# Create the figure and axis
+fig, ax = plt.subplots()
+ax.scatter(np.real(vals_us), np.imag(vals_us), marker='o', color='red')
+ax.scatter(np.real(vals), np.imag(vals), facecolors='none', marker='o', color='blue')
+#ax.set_aspect('equal', adjustable='box')
+ax.set_xlim([-0.8, 0.2])
+ax.set_ylim([-1, 1])
+ax.set_xlabel('X-axis')
+ax.set_ylabel('Y-axis')
 
-# compare results
-Error_vals = np.linalg.norm(np.loadtxt('./data/eigen/eigenvalues.txt') - 
-                            list(zip([Re], [np.abs(np.imag(vals[0]))], 
-                                     [np.real(vals[0])])), ord=np.inf)
-datapath='./data/eigen/cylinder_eigenvecs_LR_Re'+str(Re).zfill(3)
-data = TimeSeries(datapath)
-data.retrieve(element.w.vector(), 0.0)
-vecs = element.w.vector().get_local()
-data.retrieve(element.w.vector(), 1.0)
-vecs = vecs + element.w.vector().get_local()*1j
-# 
-P_nbc = model.SSModel['Prol'][0]
-P_nvel_bc = model.SSModel['Prol'][1]
-P_npre_bc = model.SSModel['Prol'][2]
-vecs = np.bmat([P_npre_bc.transpose() @ (P_nbc.transpose() @ vecs), P_nvel_bc.transpose() @ (P_nbc.transpose() @ vecs)])
-
-Error_vecs=np.linalg.norm(np.abs(vecs)-np.abs(vecs_m[:,0]), ord=np.inf)
-# print results
-print('Results are printed as follows : ')
-print(f'Re = {Re}\nEigenvalues = {vals}\nValError_2norm = {Error_vals}\nVecError_2norm = {Error_vecs}')
 #%%
 elapsed_time = time.time() - start_time
 cpu_usage_after = psutil.cpu_percent(interval=None, percpu=True)
 cpu_usage_diff = [after - before for before, after in zip(cpu_usage_before, cpu_usage_after)]
 current, peak = tracemalloc.get_traced_memory()
 tracemalloc.stop()
+
 print('Elapsed Time = %e' % (elapsed_time))
 print(f"Current memory usage: {current / (1024 * 1024):.2f} MB")
 print(f"Peak memory usage: {peak / (1024 * 1024):.2f} MB")

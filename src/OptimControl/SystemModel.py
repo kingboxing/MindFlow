@@ -11,17 +11,17 @@ This module provides the StateSpaceDAE2 class to build and assemble the state-sp
 linearized Navier-Stokes equations (DAE2 type).
 """
 
-from src.Deps import *
+from ..Deps import *
 
-from src.FreqAnalys.FreqSolverBase import FreqencySolverBase
-from src.LinAlg.MatrixAsm import IdentMatBC, MatP, IdentMatProl
-from src.LinAlg.MatrixOps import InverseMatrixOperator
-from src.LinAlg.Utils import del_zero_cols, eigen_decompose
+from ..FreqAnalys.FreqSolverBase import FreqencySolverBase
+from ..LinAlg.MatrixAsm import IdentMatBC, MatP, IdentMatProl
+from ..LinAlg.Utils import del_zero_cols, eigen_decompose, convert_to_2d
 
 
 class StateSpaceDAE2(FreqencySolverBase):
     """
-    Assemble state-space model of linearized Navier-Stokes equations (DAE2 type).
+    Assemble state-space model of linearized Navier-Stokes equations (DAE2 type)
+    in the following block form.
     
     The model structure is:
     | M   0 | d(|vel|     = | A    G  | |vel| + | B | u
@@ -168,7 +168,7 @@ class StateSpaceDAE2(FreqencySolverBase):
         C=(output_vec @ P_nbc) @ P_npre_bc if output_vec is not None else np.zeros((1, P_npre_bc.shape[1]))
 
         # update state-space model
-        self.SSModel.update({'B': B, 'C': C})
+        self.SSModel.update({'B': convert_to_2d(B, axis = 1), 'C': convert_to_2d(C, axis = 0)})
         
     def _assign_attr(self):
         """

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Tue Oct 17 20:53:24 2023
+Created on Wed Sep 18 17:47:58 2024
 
 @author: bojin
 """
@@ -9,7 +9,7 @@ Created on Tue Oct 17 20:53:24 2023
 from context import *
 from src.LinAlg.Utils import sort_complex, load_complex
 
-print('------------ Testing Eigen-decomposition Solver ------------')
+print('------------ Testing Quasi-Analysis (Eigen-decomposition) ------------')
 
 tracemalloc.start()
 process = psutil.Process()
@@ -17,9 +17,10 @@ cpu_usage_before = psutil.cpu_percent(interval=None, percpu=True)
 start_time = time.time()
 #%%
 mesh=Mesh("./data/mesh/cylinder_26k.xml")
-element=TaylorHood(mesh=mesh,order=(2,1))
+element_2d=TaylorHood(mesh=mesh,order=(2,1))
+element=TaylorHood(mesh=mesh,order=(2,1), dim=3)
 # initialise solver
-solver = EigenAnalysis(mesh=mesh, order=(2,1))
+solver = EigenAnalysis(mesh=mesh, order=(2,1), dim=3)
 
 # store boundary locations and conditions
 BoundaryLocations = {1 : {'name': 'Top',     'location':'on_boundary and near(x[1], 15.0, tol)'},
@@ -32,48 +33,40 @@ BoundaryLocations = {1 : {'name': 'Top',     'location':'on_boundary and near(x[
 solver.boundary.bc_list.update(BoundaryLocations)
 solver.boundary.Symmetry(mark=1, norm=(0,1))
 solver.boundary.Symmetry(mark=2, norm=(0,1))
-solver.boundary.VelocityInlet(mark=3, vel=(0.0,0.0))
+solver.boundary.VelocityInlet(mark=3, vel=(0.0,0.0,0.0))
 solver.boundary.FreeBoundary(mark=4)
 solver.boundary.NoSlipWall(mark=5)
 
 # mark boundary and set boundary conditions
 solver.set_boundary()
 solver.set_boundarycondition()
-# solve for Re=80
-Re=80
+# solve for Re=300
+Re=300
 
-# retrieve results
+# retrieve results: map 2D base flow to 3D element
 datapath='./data/baseflow/bf_newton_cylinder_26k_re'+str(Re).zfill(3)
 data = TimeSeries(datapath)
-data.retrieve(element.w.vector(), 0.0)
+data.retrieve(element_2d.w.vector(), 0.0)
+assign(element.w.sub(0).sub(0),element_2d.w.sub(0).sub(0))
+assign(element.w.sub(0).sub(1),element_2d.w.sub(0).sub(1))
+assign(element.w.sub(1),element_2d.w.sub(1))
 # set baseflow
 solver.set_baseflow(ic=element.w)
 # solve
 solver.param[solver.param['solver_type']]['which']='LM'
 solver.param[solver.param['solver_type']]['lusolver']='superlu'
 solver.param[solver.param['solver_type']]['symmetry']=False
-solver.param[solver.param['solver_type']]['ncv']=600
-
-solver.solve(k=200, Re=Re)
+solver.param[solver.param['solver_type']]['ncv']=300
+solver.solve(k=100, Re=Re, sz = 0j)
 
 # compare results
-eigs=load_complex('./data/eigen/LMEigen_bf_newton_cylinder_26k_re080.txt')
+eigs=load_complex('./data/eigen/LMQuasiEigen_bf_newton_cylinder_26k_re080.txt')
 vals, ind = sort_complex(solver.vals)
 Error_vals = np.linalg.norm(vals-eigs, ord=np.inf)
-# compare unstable eigs
-Error_us = np.linalg.norm(np.loadtxt('./data/eigen/eigenvalues.txt') - 
-                            list(zip([Re], [np.abs(np.imag(vals[0]))], 
-                                     [np.real(vals[0])])), ord=np.inf)
-datapath='./data/eigen/cylinder_eigenvecs_LR_Re'+str(Re).zfill(3)
-data = TimeSeries(datapath)
-data.retrieve(element.w.vector(), 0.0)
-vecs = element.w.vector().get_local()
-data.retrieve(element.w.vector(), 1.0)
-vecs = vecs + element.w.vector().get_local()*1j
-Error_vecs=np.linalg.norm(np.abs(vecs)-np.abs(solver.vecs[:,ind[0]]), ord=np.inf)
+
 # print results
 print('Results are printed as follows : ')
-print(f'Re = {Re}\nAll_ValError_infnorm = {Error_vals}\nUs_ValError_infnorm = {Error_us}\nVecError_2norm = {Error_vecs}')
+print(f'Re = {Re}\nAll_ValError_infnorm = {Error_vals}\n')
 #%%
 elapsed_time = time.time() - start_time
 cpu_usage_after = psutil.cpu_percent(interval=None, percpu=True)

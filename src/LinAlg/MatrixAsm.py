@@ -11,9 +11,9 @@ This module provides utility functions for constructing prolongation matrices, m
 and identity matrices with boundary or subdomain conditions for finite element analysis.
 """
 
-from src.Deps import *
-from src.LinAlg.MatrixOps import AssembleMatrix, ConvertMatrix
-from src.LinAlg.Utils import get_subspace_info, find_subspace_index
+from ..Deps import *
+from ..LinAlg.MatrixOps import AssembleMatrix, ConvertMatrix
+from ..LinAlg.Utils import get_subspace_info, find_subspace_index
 
 def IdentMatProl(element, index=None):
     """

@@ -11,7 +11,7 @@ This module provides the GRiccatiDAE2Solver class for solving generalized Riccat
 for index-2 systems using the M.E.S.S. library.
 """
 
-from src.Deps import *
+from ..Deps import *
 from joblib import Parallel, delayed
 
 try:
@@ -19,8 +19,8 @@ try:
 except ImportError:
     MESS = False
     
-from src.OptimControl.SystemModel import StateSpaceDAE2
-from src.LinAlg.Utils import distribute_numbers
+from ..OptimControl.SystemModel import StateSpaceDAE2
+from ..LinAlg.Utils import distribute_numbers
 
 
 class GRiccatiDAE2Solver:

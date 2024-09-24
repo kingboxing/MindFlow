@@ -11,12 +11,12 @@ This module provides a class for performing resolvent analysis on the linearized
 """
 
 
-from src.Deps import *
+from ..Deps import *
 
-from src.FreqAnalys.FreqSolverBase import FreqencySolverBase
-from src.LinAlg.MatrixOps import AssembleMatrix, AssembleVector, InverseMatrixOperator
-from src.LinAlg.MatrixAsm import MatP, MatM, MatQ, MatD
-from src.LinAlg.Utils import assign2
+from ..FreqAnalys.FreqSolverBase import FreqencySolverBase
+from ..LinAlg.MatrixOps import AssembleMatrix, AssembleVector, InverseMatrixOperator
+from ..LinAlg.MatrixAsm import MatP, MatM, MatQ, MatD
+from ..LinAlg.Utils import assign2
 
 class ResolventAnalysis(FreqencySolverBase):
     """
@@ -45,6 +45,8 @@ class ResolventAnalysis(FreqencySolverBase):
         # see scipy.sparse.linalg.eigs for details of parameters
         self.param['resolvent_solver']={'method': 'lu', 
                                         'lusolver': 'mumps',
+                                        'symmetry': True,
+                                        'BCpart': None,
                                         'echo':False,
                                         'which': 'LM',
                                         'v0': None,
@@ -188,7 +190,7 @@ class ResolventAnalysis(FreqencySolverBase):
             
         if not reuse:
             self._form_LNS_equations(s=s, sz=sz)
-            self._assemble_pencil(Mat)
+            self._assemble_pencil(Mat=Mat, symmetry=param['symmetry'], BCpart=param['BCpart'])
             self._initialize_solver(bound=bound[1]) # bound for forcing
             self._initialize_expr(bound=bound[0]) # bound for response
             

@@ -5,7 +5,7 @@ Created on Sat Feb  3 15:48:02 2024
 
 @author: bojin
 """
-from src.Deps import *
+from ..Deps import *
 
 
 class SetInitialCondition:

@@ -1,1 +1,1 @@
-# 
+# FERePack/src/BasicFunc/__init__.py"""Basic functions for setting boundary conditions, initial conditions, and finite elements."""from .Boundary import SetBoundary, SetBoundaryConditionfrom .ElementFunc import TaylorHood, Decoupled, PoissonPRfrom .InitialCondition import SetInitialCondition

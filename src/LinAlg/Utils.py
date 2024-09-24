@@ -5,8 +5,8 @@ Created on Wed Aug 28 18:48:11 2024
 
 @author: bojin
 """
-from src.Deps import *
-from src.LinAlg.MatrixOps import InverseMatrixOperator
+from ..Deps import *
+from ..LinAlg.MatrixOps import InverseMatrixOperator
 
 def assign2(receiving_func, assigning_func):
     """
@@ -246,7 +246,6 @@ def eigen_decompose(A, M=None, k=3, sigma=0.0, solver_params=None):
 
     # Update default parameters with user-provided ones
     solver_params = {**default_params, **solver_params}
-
     # Shift-invert operator
     OP = A - sigma * M if sigma else A
 
@@ -314,3 +313,97 @@ def distribute_numbers(n, k):
     distribution = [base_size + 1 if i < remainder else base_size for i in range(k)]
     
     return distribution
+
+def convert_to_2d(arr, axis=0):
+    """
+    Check if an array is 1-dimensional, and if yes, convert it to 2D.
+    
+    Parameters:
+    arr : array_like
+        Input array to check and potentially convert.
+    axis : int
+        the axis to expand.
+    Returns:
+    ndarray
+        A 2D version of the input array.
+    """
+    arr = np.asarray(arr)  # Ensure input is a NumPy array
+    
+    if arr.ndim == 1:  # Check if the array is 1D
+        arr = np.expand_dims(arr, axis=axis)  # Convert to 2D (row vector)
+    
+    return arr
+
+def save_complex(complex_list, filename):
+    """
+    Save a list of complex numbers to a text file.
+    
+    Parameters:
+    complex_list : list of complex
+        List of complex numbers to store.
+    filename : str
+        Name of the file to write to.
+    """
+    with open(filename, 'w') as file:
+        for num in complex_list:
+            # Write real and imaginary parts separately
+            file.write(f"{num.real} {num.imag}\n")
+            
+def load_complex(filename):
+    """
+    Load a list of complex numbers from a text file.
+    
+    Parameters:
+    filename : str
+        Name of the file to read from.
+        
+    Returns:
+    list of complex
+        List of complex numbers.
+    """
+    complex_list = []
+    with open(filename, 'r') as file:
+        for line in file:
+            real, imag = map(float, line.split())
+            complex_list.append(complex(real, imag))
+    return complex_list
+
+def plot_spmat(sparse_matrix):
+    """
+    Plot the non-zero elements of a scipy sparse matrix.
+    
+    Parameters:
+    sparse_matrix : scipy.sparse.csr_matrix
+        The sparse matrix to plot.
+    """
+    # Convert the sparse matrix to COO format for easy access to row, col, and data
+    sparse_coo = sparse_matrix.tocoo()
+
+    # Plot the non-zero elements as a scatter plot
+    plt.figure(figsize=(6, 6))
+    plt.scatter(sparse_coo.col, sparse_coo.row, marker='o', color='blue', s=5)  # Use row, col coordinates
+    plt.title('Non-zero Elements of the Sparse Matrix')
+    plt.xlabel('Column Index')
+    plt.ylabel('Row Index')
+    plt.gca().invert_yaxis()  # Invert y-axis to match matrix layout
+    plt.gca().set_aspect('equal', adjustable='box')  # Set aspect ratio to 1:1
+    plt.show()
+    
+def rmse(predictions, targets):
+    """
+    Root-mean-square deviation between two arrays
+
+    Parameters
+    ----------------------------
+    predictions : Predicted array
+
+    targets : Obtained array
+
+    Returns
+    ----------------------------
+    Root-mean-square deviation
+
+    """
+    return np.sqrt(((predictions - targets) ** 2).mean())
+
+

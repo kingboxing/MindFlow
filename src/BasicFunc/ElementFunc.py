@@ -6,7 +6,7 @@ Created on Tue Oct 17 22:34:36 2023
 @author: bojin
 """
 
-from src.Deps import *
+from ..Deps import *
 
 """
 This module provides classes that define different finite elements

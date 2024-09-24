@@ -10,11 +10,11 @@ VectorAsm Module
 This module provides classes for generating common input/output vectors for these solvers.
 """
 
-from src.Deps import *
+from ..Deps import *
 
-from src.Eqns.NavierStokes import Incompressible
-from src.LinAlg.MatrixOps import AssembleMatrix, AssembleVector, ConvertVector,ConvertMatrix, InverseMatrixOperator
-from src.LinAlg.Utils import allclose_spmat, get_subspace_info, find_subspace_index
+from ..Eqns.NavierStokes import Incompressible
+from ..LinAlg.MatrixOps import AssembleMatrix, AssembleVector, ConvertVector,ConvertMatrix, InverseMatrixOperator
+from ..LinAlg.Utils import allclose_spmat, get_subspace_info, find_subspace_index
 
 #%%
 class VectorGenerator:
@@ -201,7 +201,7 @@ class VectorGenerator:
         index : int, optional
             Scalar subspace index. Default is 0.
         limit : float, optional
-            Limit beyond which the Gaussian value is set to zero. Default is None.
+            When the distance from the center exceeds Limit * sigma, the value is set to 0. Default is None.
 
         Returns
         -------
@@ -236,7 +236,7 @@ class VectorGenerator:
             subdofs_index = subfunc.dofmap().dofs() 
             vertex_coords = dofs_coords[subdofs_index, :]
             # find the global vertex index outside the limtation
-            vertex_index = subdofs_index[np.asarray([point.distance(Point(*vertex)) for vertex in vertex_coords])>limit*sigma]
+            vertex_index = np.asarray(subdofs_index)[np.asarray([point.distance(Point(*vertex)) for vertex in vertex_coords])>limit*sigma]
             # Set zero at the choosen vertex 
             w.vector()[vertex_index] = 0
 
@@ -323,7 +323,7 @@ class VectorGenerator:
         # closet coordinate (not exactly equals to the given coordinate)
         coord_cloest=dofs_coords[closest_vertex_index]
         # Set the value at the closest vertex in the specified subspace
-        w.vector()[closest_vertex_index] = value
+        w.vector()[closest_vertex_index] = scale
 
         return w.vector().get_local(), tuple(coord_cloest)
     

@@ -9,14 +9,13 @@ Created on Mon Jan  8 20:08:46 2024
 """This module provides the classes that solve Navier-Stokes equations
 """
 
-from src.Deps import *
+from ..Deps import *
 
-from src.NSolver.SolverBase import NSolverBase
-from src.BasicFunc.ElementFunc import TaylorHood, Decoupled
-from src.NSolver.SteadySolver import NewtonSolver
-from src.BasicFunc.Boundary import SetBoundary, SetBoundaryCondition
-from src.BasicFunc.InitialCondition import SetInitialCondition
-from src.Eqns.NavierStokes import Incompressible
+from ..NSolver.SolverBase import NSolverBase
+from ..BasicFunc.ElementFunc import TaylorHood, Decoupled
+from ..NSolver.SteadySolver import NewtonSolver
+from ..BasicFunc.Boundary import SetBoundary, SetBoundaryCondition
+from ..BasicFunc.InitialCondition import SetInitialCondition
 
 class DNS_Newton(NewtonSolver):
     """

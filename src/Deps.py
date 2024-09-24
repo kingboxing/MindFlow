@@ -15,8 +15,6 @@ import copy
 import gc
 import multiprocessing
 from petsc4py import PETSc
-from scikits import umfpack
-from src.LinAlg.Utils import assign2
 
 parameters["std_out_all_processes"] = False
 comm_mpi4py = MPI.comm_world
