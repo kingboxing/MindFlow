@@ -8,6 +8,7 @@ Created on Thu Jun  6 17:35:12 2024
 
 from dolfin import *
 import numpy as np
+import scipy.io as sio
 import scipy.linalg as sla
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
@@ -15,6 +16,22 @@ import copy
 import gc
 import multiprocessing
 from petsc4py import PETSc
+import matplotlib.pyplot as plt
+
+try:
+    from scikits import umfpack
+except ImportError:
+    PyUMFPACK = False
+
+try:
+    from sksparse.cholmod import cholesky
+except ImportError:
+    CHOLESKY = False
+
+try:
+    import pymess as mess
+except ImportError:
+    MESS = False
 
 parameters["std_out_all_processes"] = False
 comm_mpi4py = MPI.comm_world

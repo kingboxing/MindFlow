@@ -23,7 +23,8 @@ class EigenAnalysis(FreqencySolverBase):
     """
     Perform eigenvalue and eigenvector analysis of the linearised Navier-Stokes system.
     """
-    def __init__(self, mesh, Re=None, order=(2,1), dim=2, constrained_domain=None):
+
+    def __init__(self, mesh, Re=None, order=(2, 1), dim=2, constrained_domain=None):
         """
         Initialize the EigenAnalysis solver.
 
@@ -42,7 +43,7 @@ class EigenAnalysis(FreqencySolverBase):
 
         """
         super().__init__(mesh, Re, order, dim, constrained_domain)
-        self.param['solver_type']='eigen_solver'
+        self.param['solver_type'] = 'eigen_solver'
         # see scipy.sparse.linalg.eigs for details of parameters
         """
         symmetry : bool, optional
@@ -54,20 +55,20 @@ class EigenAnalysis(FreqencySolverBase):
         BCpart : ‘r’ or ‘i’/None, optional
             The homogenous boundary conditions are applied in the real (matrix NS) or imag (matrix M) part of system. The default is None.
         """
-        self.param['eigen_solver']={'method': 'lu', 
-                                    'lusolver': 'mumps',
-                                    'symmetry': True,
-                                    'solve_type':'implicit',
-                                    'inverse': False,
-                                    'BCpart': None,
-                                    'echo':False,
-                                    'which': 'LM',
-                                    'v0': None,
-                                    'ncv': None,
-                                    'maxiter': None,
-                                    'tol': 0,
-                                    'return_eigenvectors': True,
-                                    'OPpart': None}
+        self.param['eigen_solver'] = {'method': 'lu',
+                                      'lusolver': 'mumps',
+                                      'symmetry': True,
+                                      'solve_type': 'implicit',
+                                      'inverse': False,
+                                      'BCpart': None,
+                                      'echo': False,
+                                      'which': 'LM',
+                                      'v0': None,
+                                      'ncv': None,
+                                      'maxiter': None,
+                                      'tol': 0,
+                                      'return_eigenvectors': True,
+                                      'OPpart': None}
 
     def _initialize_solver(self, sigma, inverse):
         """
@@ -85,26 +86,26 @@ class EigenAnalysis(FreqencySolverBase):
         """
         # Set up the eigenvalue problem: A*x = lambda * M * x, with A = -NS (Navier-Stokes)
         self.A = -self.pencil[0]
-        self.M = self.pencil[1] # check if symmtery
-        if self.element.dim > self.element.mesh.topology().dim(): #quasi-analysis
+        self.M = self.pencil[1]  # check if symmtery
+        if self.element.dim > self.element.mesh.topology().dim():  #quasi-analysis
             self.A += -self.pencil[2].multiply(1j)
-            
-        param=self.param[self.param['solver_type']]
-        
+
+        param = self.param[self.param['solver_type']]
+
         # shift-invert operator
         OP = self.A - sigma * self.M if sigma else self.A
-        
-        if inverse: # inversed eigenvalue?
-            OP=OP.T
-            
+
+        if inverse:  # inversed eigenvalue?
+            OP = OP.T
+
         if sigma is not None:
             if param['method'] == 'lu':
                 info(f"LU decomposition using {param['lusolver'].upper()} solver...")
-                self.OPinv=InverseMatrixOperator(OP,lusolver=param['lusolver'], echo=param['echo'])
+                self.OPinv = InverseMatrixOperator(OP, lusolver=param['lusolver'], echo=param['echo'])
                 info('Done.')
             else:
-                pass # pending for iterative solvers
-                
+                pass  # pending for iterative solvers
+
     def _solve_implicit(self, k, sigma):
         """
         Solve the Shift-Invert Mode eigenvalue problem using scipy.sparse.linalg.eigs
@@ -123,13 +124,13 @@ class EigenAnalysis(FreqencySolverBase):
         """
         param = self.param[self.param['solver_type']]
         OPinv = self.OPinv if sigma is not None else None
-        
+
         if sigma is not None:
             info('Internal Shift-Invert Mode Solver is on')
         return spla.eigs(self.A, k=k, M=self.M, Minv=None, OPinv=OPinv, sigma=sigma, which=param['which'],
-                                                                v0=param['v0'],ncv=param['ncv'], maxiter=param['maxiter'], tol=param['tol'],
-                                                                return_eigenvectors=param['return_eigenvectors'], OPpart=param['OPpart'])
-            
+                         v0=param['v0'], ncv=param['ncv'], maxiter=param['maxiter'], tol=param['tol'],
+                         return_eigenvectors=param['return_eigenvectors'], OPpart=param['OPpart'])
+
     def _solve_explicit(self, k, sigma, inverse):
         """
 
@@ -149,27 +150,28 @@ class EigenAnalysis(FreqencySolverBase):
             Eigenvalues and eigenvectors.
         """
         info('Explicit Shift-Invert Mode Solver is on')
+        param = self.param[self.param['solver_type']]
+
         if sigma is None:
             sigma = 0.0
-            
+
         if inverse:
-            expr = spla.aslinearoperator(self.M.transpose())*self.OPinv
+            expr = spla.aslinearoperator(self.M.transpose()) * self.OPinv
         else:
-            expr = self.OPinv*spla.aslinearoperator(self.M)
-            
-        if isinstance(sigma, (complex, np.complexfloating)): # if sigma is complex, then convert expr to complex
-            expr = expr.astype(complex) # now eigs computes w'[i] = 1/(w[i]-sigma).
-        
+            expr = self.OPinv * spla.aslinearoperator(self.M)
+
+        if isinstance(sigma, (complex, np.complexfloating)):  # if sigma is complex, then convert expr to complex
+            expr = expr.astype(complex)  # now eigs computes w'[i] = 1/(w[i]-sigma).
+
         vals, vecs = spla.eigs(expr, k=k, M=None, Minv=None, OPinv=None, sigma=None, which=param['which'],
-                                               v0=param['v0'],ncv=param['ncv'], maxiter=param['maxiter'], tol=param['tol'],
-                                               return_eigenvectors=param['return_eigenvectors'], OPpart=param['OPpart'])
+                               v0=param['v0'], ncv=param['ncv'], maxiter=param['maxiter'], tol=param['tol'],
+                               return_eigenvectors=param['return_eigenvectors'], OPpart=param['OPpart'])
         # Adjust eigenvalues with sigma
-        vals=1.0/vals+sigma 
-        
+        vals = 1.0 / vals + sigma
+
         return vals, vecs
-        
-        
-    def solve(self, k=3, sigma=0.0, Re=None, Mat=None, reuse=False, sz = None):
+
+    def solve(self, k=3, sigma=0.0, Re=None, Mat=None, reuse=False, sz=None):
         """
         Solve for k eigenvalues and eigenvectors of system.
 
@@ -195,23 +197,23 @@ class EigenAnalysis(FreqencySolverBase):
                 vals_orig = 1.0 / vals_si, vals_si computed and vals_orig returned
 
         """
-        
-        param=self.param[self.param['solver_type']]
-        
+
+        param = self.param[self.param['solver_type']]
+
         # if sigma is None:
         #     BCpart = 'r'
-            
+
         # if sigma == 0.0:
         #     BCpart = 'i'
-            
+
         if Re is not None:
             self.eqn.Re = Re
-            
+
         if not reuse:
-            self._form_LNS_equations(s=1.0j, sz = sz)
+            self._form_LNS_equations(s=1.0j, sz=sz)
             self._assemble_pencil(Mat, symmetry=param['symmetry'], BCpart=param['BCpart'])
             self._initialize_solver(sigma, param['inverse'])
-        
+
         if param['solve_type'].lower() == 'implicit' and not param['inverse']:
             # Solve the eigenvalue problem using an implicit method
             self.vals, self.vecs = self._solve_implicit(k, sigma)
@@ -219,13 +221,7 @@ class EigenAnalysis(FreqencySolverBase):
             # Solve the eigenvalue problem explicitly
             self.vals, self.vecs = self._solve_explicit(k, sigma, param['inverse'])
         else:
-            raise ValueError("Invalid solve type. Use 'implicit' or 'explicit'. while using Shift-Invert Mode (Explicit solver for inverse=True)")
-            
+            raise ValueError(
+                "Invalid solve type. Use 'implicit' or 'explicit'. while using Shift-Invert Mode (Explicit solver for inverse=True)")
+
         gc.collect()
-
-
-
-
-
-    
-    

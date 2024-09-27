@@ -1,8 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <module type="PYTHON_MODULE" version="4">
   <component name="NewModuleRootManager">
-    <content url="file://$MODULE_DIR$" />
-    <orderEntry type="jdk" jdkName="Remote Python 3.8.6 Docker (ferepack:v1)" jdkType="Python SDK" />
+    <content url="file://$MODULE_DIR$">
+      <sourceFolder url="file://$MODULE_DIR$/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/BasicFunc" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/Eqns" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/FlowAI" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/FreqAnalys" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/Interface" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/LinAlg" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/NSolver" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/OptimControl" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/Params" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/PrePost" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/tests" isTestSource="true" />
+    </content>
+    <orderEntry type="jdk" jdkName="Remote Python 3.8.6 Docker (ferepack:v3)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
   </component>
   <component name="PyDocumentationSettings">

@@ -15,15 +15,13 @@ from ..Deps import *
 from ..OptimControl.RiccatiSolver import GRiccatiDAE2Solver
 from ..OptimControl.BernoulliSolver import BernoulliFeedback
 from ..LinAlg.Utils import distribute_numbers
-try:
-    import pymess as mess
-except ImportError:
-    MESS = False
- 
+
+
 class LQESolver(GRiccatiDAE2Solver):
     """
     Solver for the Linear Quadratic Estimation (LQE) problem of an Index-2 system.
     """
+
     def __init__(self, ssmodel):
         """
         Initialize the LQE solver with the state-space model.
@@ -33,12 +31,14 @@ class LQESolver(GRiccatiDAE2Solver):
         ssmodel : dict or StateSpaceDAE2
             State-space model or dictionary containing the system matrices.
         """
-        
+
         super().__init__(self._initialise_model(ssmodel))
-        self._k0=BernoulliFeedback(ssmodel)
-        self.param['solver_type']='lqe_solver'
+        self._k0 = BernoulliFeedback(ssmodel)
+        self.param['solver_type'] = 'lqe_solver'
+        self.param['initial_feedback'] = self._k0.param
         self._default_param()
-        
+        self.sensor_noise(alpha=1)  # initialise Key 'C_pen_mat' in ssmodel
+
     def _initialise_model(self, ssmodel):
         """
         Initialize the model with necessary matrices.
@@ -53,43 +53,45 @@ class LQESolver(GRiccatiDAE2Solver):
         dict
             Initialized model with required matrices.
         """
-        
+
         model = {'A': ssmodel['A'],
                  'M': ssmodel['M'],
                  'G': ssmodel['G'],
                  'B': ssmodel['B'],
                  'C': ssmodel['C']}
         return model
-        
-        
+
     def _default_param(self):
         """
         Initialize default parameters for the LQE solver.
         """
-        
+        param_adi = {'memory_usage': mess.MESS_MEMORY_HIGH,
+                     'paratype': mess.MESS_LRCFADI_PARA_ADAPTIVE_V,
+                     'output': 0,
+                     'res2_tol': 1e-8,
+                     'maxit': 2000
+                     }
+        param_nm = {'output': 1,
+                    'singleshifts': 0,
+                    'linesearch': 1,
+                    'res2_tol': 1e-5,
+                    'maxit': 30,
+                    'k0': None  #Initial Feedback
+                    }
         param_default = {'type': mess.MESS_OP_NONE,
-                         'adi.memory_usage': mess.MESS_MEMORY_HIGH,
-                         'adi.paratype': mess.MESS_LRCFADI_PARA_ADAPTIVE_V,
-                         'adi.output': 0,
-                         'adi.res2_tol': 1e-8,
-                         'adi.maxit': 2000,
-                         'nm.output': 1,
-                         'nm.singleshifts': 0,
-                         'nm.linesearch': 1,
-                         'nm.res2_tol': 1e-5,
-                         'nm.maxit': 30,
-                         #'nm.k0': None #Initial Feedback
-                         'lusolver':mess.MESS_DIRECT_UMFPACK_LU
+                         'lusolver': mess.MESS_DIRECT_UMFPACK_LU,
+                         'adi': param_adi,
+                         'nm': param_nm
                          }
-        self.update_parameters(param_default)
-            
+        self.update_riccati_params(param_default)
+
     def init_feedback(self):
         """
         Initialize the feedback using Bernoulli feedback.
         """
-        param = {'nm.k0': self._k0.solve(transpose=True)}
-        self.update_parameters(param)
-        
+        param = {'nm': {'k0': self._k0.solve(transpose=True)}}
+        self.update_riccati_params(param)
+
     def sensor_noise(self, alpha):
         """
         Set the magnitude of sensor noise modeled as uncorrelated zero-mean Gaussian white noise.
@@ -101,17 +103,17 @@ class LQESolver(GRiccatiDAE2Solver):
         alpha : int, float, or 1D array
             Magnitude of sensor noise.
         """
-        n=self.Model['C'].shape[0]
+        n = self.Model['C'].shape[0]
         if isinstance(alpha, (int, np.integer, float, np.floating)):
-            mat = 1.0/alpha * np.identity(n)
+            mat = 1.0 / alpha * np.identity(n)
         elif isinstance(alpha, (list, tuple, np.ndarray)):
             mat = np.diag(np.reciprocal(alpha[:n]))
         else:
             raise TypeError('Invalid type for sensor noise.')
-        
+
         self.Model['C_pen_mat'] = mat
-        self.Model['C'] = mat @ self.Model['C'] 
-        
+        self.Model['C'] = mat @ self.Model['C']
+
     def disturbance(self, Bd=None):
         """
         Set the square root of the random disturbance covariance matrix.
@@ -121,12 +123,12 @@ class LQESolver(GRiccatiDAE2Solver):
         Bd : 1D array or ndarray
             Disturbance matrix to set.
         """
-        
+
         if Bd is not None and Bd.shape[0] == self.Model['B'].shape[0]:
             self.Model['B'] = Bd
         else:
             raise ValueError('Invalid shape for disturbances')
-                
+
     def estimator(self):
         """
         Compute the estimator from the solution of the LQE problem.
@@ -136,10 +138,10 @@ class LQESolver(GRiccatiDAE2Solver):
         Kf : numpy array
             Kalman filter gain matrix (H2 estimator).
         """
-        
-        return self.facZ @ (self.facZ.T @  self.Model['C'].T @ self.Model['C_pen_mat'])
-    
-    def solve(self, MatQ=None, delta = -0.02, pid = None, Kr = None):
+
+        return self.facZ @ (self.facZ.T @ self.Model['C'].T @ self.Model['C_pen_mat'])
+
+    def solve(self, MatQ=None, delta=-0.02, pid=None, Kr=None):
         """
         Solve the LQE problem once and return results.
 
@@ -165,10 +167,10 @@ class LQESolver(GRiccatiDAE2Solver):
         norm_lqr : numpy array
             LQR norm, if computed.
         """
-        
+
         return self.iter_solve(1, MatQ, delta, pid, Kr)
-    
-    def iter_solve(self, num_iter = 1, MatQ=None, delta = -0.02, pid = None, Kr = None):
+
+    def iter_solve(self, num_iter=1, MatQ=None, delta=-0.02, pid=None, Kr=None):
         """
         Solve the LQE problem iteratively using accumulation method.
 
@@ -202,38 +204,39 @@ class LQESolver(GRiccatiDAE2Solver):
         n = B.shape[1]
         alloc = distribute_numbers(n, num_iter)
         # initilise results
-        Kf=np.zeros(self.Model['C'].T.shape)
-        Status=[]
-        H2NormS=0
-        norm_lqr=None
-        
+        Kf = np.zeros(self.Model['C'].T.shape)
+        Status = []
+        H2NormS = None
+        norm_lqr = None
+
         for i in range(num_iter):
             if i > 0:
                 self.Model['A'] += - sp.csr_matrix(self.Model['M'] @ Kf_sub) @ sp.csr_matrix(self.Model['C'])
-            self.Model['A'].sort_indices() # sort data indices, prevent unmfpack error -8
-            
+            self.Model['A'].sort_indices()  # sort data indices, prevent unmfpack error -8
+
             # allocate disturbance modes
             ind_s = int(np.sum(alloc[:i]))
             ind_e = ind_s + alloc[i]
             self.disturbance(B[:, ind_s:ind_e])
-            
+
             # now self._B = B[:, ind_s:ind_e]
             status_sub = self.solve_riccati(delta)
             Kf_sub = self.estimator()
-            
+
             # collect results
             Status.append(status_sub)
             Kf += Kf_sub
-            
+
             if MatQ is not None:
-                H2NormS += self.squared_h2norm(MatQ, pid)
-            
+                H2NormS = self.squared_h2norm(MatQ, pid) if i == 0 else H2NormS + self.squared_h2norm(MatQ, pid)
+
             if Kr is not None:
                 norm_lqr = self.normvec_T(Kr) if i == 0 else norm_lqr + self.normvec_T(Kr)
 
             # delete results to save memory
-            del self.facZ
-            gc.collect()
-        
+            if num_iter > 1:
+                del self.facZ
+                gc.collect()
+
         Status.append({'alloc_mode': alloc})
         return Kf, Status, H2NormS, norm_lqr

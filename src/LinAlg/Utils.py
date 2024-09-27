@@ -28,8 +28,8 @@ def assign2(receiving_func, assigning_func):
     if isinstance(assigning_func, np.ndarray):
         # Check if the size of the NumPy array matches the number of DOFs in the FEniCS function
         if receiving_func.vector().size() != assigning_func.size:
-            raise ValueError(f"Size mismatch: FEniCS function has {fenics_function.vector().size()} DOFs, "
-                             f"but the NumPy array has {source.size} elements.")
+            raise ValueError(f"Size mismatch: FEniCS function has {receiving_func.vector().size()} DOFs, "
+                             f"but the NumPy array has {assigning_func.size} elements.")
         # Assign the NumPy array values to the FEniCS function
         receiving_func.vector()[:]=np.ascontiguousarray(assigning_func)
     elif isinstance(assigning_func, function.function.Function):
@@ -266,13 +266,15 @@ def eigen_decompose(A, M=None, k=3, sigma=0.0, solver_params=None):
                      tol=solver_params['tol'], return_eigenvectors=solver_params['return_eigenvectors'],
                      OPpart=solver_params['OPpart'])
     
-def sort_complex(a):
+def sort_complex(a, tol=1e-8):
     """
     Sort a complex array based on the real part, then the imaginary part.
     
     Parameters:
     a : array_like
         Input complex array to be sorted.
+    tol : float, optional
+        Precision of array's real part to sort. The default is 1e-8.
         
     Returns:
     sorted_array : ndarray
@@ -281,7 +283,8 @@ def sort_complex(a):
         Indices that sort the original array in descending order.
     """
     # Get the indices that would sort the array based on real part and then imaginary part
-    index_sort = np.lexsort((a.imag, a.real))[::-1]  # Reverse for descending order
+    atol= np.round(a.real, int(np.abs(np.log10(tol)))) + 1j* a.imag
+    index_sort = np.lexsort((atol.imag, atol.real))[::-1]  # Reverse for descending order
     
     # Use the sorted indices to get the sorted array
     sorted_array = a[index_sort]
@@ -407,3 +410,46 @@ def rmse(predictions, targets):
     return np.sqrt(((predictions - targets) ** 2).mean())
 
 
+def update_dict_in_depth(original, updates):
+    """
+    Recursively update the original dictionary with the updates dictionary.
+
+    Parameters:
+    original (dict): The original dictionary to be updated.
+    updates (dict): The updates to apply.
+
+    Returns:
+    dict: The updated dictionary.
+    """
+    for key, value in updates.items():
+        if isinstance(value, dict) and key in original:
+            # If both the original and update value are dicts, recurse into the dicts
+            if isinstance(original[key], dict):
+                update_dict_in_depth(original[key], value)
+            else:
+                original[key] = value
+        else:
+            # Otherwise, simply update/overwrite the value
+            original[key] = value
+    return original
+
+
+def set_attr_in_depth(obj, attr):
+    """
+    Recursively set attributes on an object based on a nested dictionary.
+
+    Parameters:
+    - obj: The object on which attributes will be set.
+    - attributes: A dictionary representing the attributes and their values. Nested dictionaries represent nested attributes.
+    """
+    for key, value in attr.items():
+        if isinstance(value, dict):
+            # Recursively set attributes on nested objects
+            nested_obj = getattr(obj, key, None)
+            if nested_obj is None:
+                nested_obj = type('DynamicObject', (object,), {})()  # Create a new dynamic object if None
+                setattr(obj, key, nested_obj)
+            set_attr_in_depth(nested_obj, value)
+        else:
+            # Set the attribute directly if the value is not a dictionary
+            setattr(obj, key, value)

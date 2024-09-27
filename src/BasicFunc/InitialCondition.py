@@ -12,7 +12,9 @@ class SetInitialCondition:
     """
     Set initial conditions for FEniCS simulations, with optional noise and support for parallel execution.
     """
-    def __init__(self, flag, ic=None, fw=None, noise=False, timestamp=0.0, mesh=None, element_in = None, element_out = None):
+
+    def __init__(self, flag, ic=None, fw=None, noise=False, timestamp=0.0, mesh=None, element_in=None,
+                 element_out=None):
         """
         Initialize the initial condition setup.
 
@@ -36,18 +38,18 @@ class SetInitialCondition:
             The output element object (e.g., TaylorHood). Default is None.
         """
         vec_noise = self._set_noise(noise, element_out) if noise and element_out else None
-        
+
         if ic and fw:
-            if flag in [0, 1]:# steady newton solver/transient newton solver
+            if flag in [0, 1]:  # steady newton solver/transient newton solver
                 self._set_function(ic, fw, timestamp)
                 if flag == 1 and vec_noise:
                     fw.vector()[:] += vec_noise
-            elif flag == 2: # transient IPCS solver (MPI)
-                self._set_function_parallel(ic, fw, mesh, timestamp, element_in = element_in, element_out = element_out)
+            elif flag == 2:  # transient IPCS solver (MPI)
+                self._set_function_parallel(ic, fw, mesh, timestamp, element_in=element_in, element_out=element_out)
                 if vec_noise:
                     fw[0].vector()[:] += vec_noise[0]
                     fw[1].vector()[:] += vec_noise[1]
-    
+
     def _read_timeseries(self, path, fw, timestamp):
         """
         Read a time series file and apply it to the function.
@@ -61,10 +63,11 @@ class SetInitialCondition:
         timestamp : float
             The timestamp to retrieve from the time series.
         """
-        
+
         timeseries_flow = TimeSeries(path)
         timeseries_flow.retrieve(fw.vector(), timestamp)
-#%%        
+
+    #%%
     def _read_hdf5(self, hdf, fw, timestamp, label, mesh):
         """
         Read an HDF5 file and apply it to the function.
@@ -88,9 +91,9 @@ class SetInitialCondition:
                 hdf.read(fw, label + '/vector_' + str(ts))
                 return
         info('Initial Timestamp not found!')
-        
-#%%
-        
+
+    #%%
+
     def _set_function(self, ic, fw, timestamp=0.0):
         """
         Set the initial condition for a function.
@@ -110,9 +113,9 @@ class SetInitialCondition:
             assign(fw, ic)
         else:
             info("Invalid initial condition format (expected path or function).")
-           
-#%%
-    def _set_function_parallel(self, ic, fw, mesh, timestamp, element_in = None, element_out = None):
+
+    #%%
+    def _set_function_parallel(self, ic, fw, mesh, timestamp, element_in=None, element_out=None):
         """
         Set the initial condition for a parallel IPCS solver.
 
@@ -131,11 +134,11 @@ class SetInitialCondition:
         element_out : object, optional
             The output element object (e.g., TaylorHood). Default is None.
         """
-        
+
         # set parallel in Decoupled element
-        if isinstance(ic, str): # if a path is given
-            hdf = HDF5File(mesh.mpi_comm(), ic+'.h5', 'r')
-            if hdf.has_dataset('Velocity') and hdf.has_dataset('Pressure'): # stored in two datasets
+        if isinstance(ic, str):  # if a path is given
+            hdf = HDF5File(mesh.mpi_comm(), ic + '.h5', 'r')
+            if hdf.has_dataset('Velocity') and hdf.has_dataset('Pressure'):  # stored in two datasets
                 self._read_hdf5(hdf, fw[0], timestamp, 'Velocity', mesh)
                 self._read_hdf5(hdf, fw[1], timestamp, 'Pressure', mesh)
             else:
@@ -143,17 +146,18 @@ class SetInitialCondition:
                     hdf.rename(hdf.label(), 'Coupled Field')
                     self._read_hdf5(hdf, element_in.w, timestamp, 'Coupled Field', mesh)
                 elif element_in.type == 'TaylorHood':
-                    self._read_timeseries(ic, element_in.w, timestamp)  
+                    self._read_timeseries(ic, element_in.w, timestamp)
                 assign(fw[0], element_in.w.sub(0))
                 assign(fw[1], element_in.w.sub(1))
-                
-        elif element_in.type == element_out.type: # type is 'Decoupled', ic is a tuple
+
+        elif element_in.type == element_out.type:  # type is 'Decoupled', ic is a tuple
             self._set_function(ic[0], fw[0])
             self._set_function(ic[1], fw[1])
-        elif element_in.type == 'TaylorHood': # ic is a Function
+        elif element_in.type == 'TaylorHood':  # ic is a Function
             self._set_function(ic.sub(0), fw[0])
             self._set_function(ic.sub(1), fw[1])
-#%%
+
+    #%%
     def _set_noise(self, noise, element_out):
         """
         Generate noise to add to the initial condition.
@@ -170,7 +174,7 @@ class SetInitialCondition:
         vec_noise : ndarray or tuple of ndarrays
             The noise vector(s).
         """
-        
+
         vec_noise = None
         if element_out.type == 'TaylorHood':
             if noise is True or isinstance(noise, (float, np.floating)):
@@ -180,14 +184,14 @@ class SetInitialCondition:
                 vec_noise = np.ascontiguousarray(noise)
             else:
                 info("Invalid noise format (expected float or ndarray).")
-                
+
         elif element_out.type == 'Decoupled':
-            if noise is True or isinstance(noise, (float, np.floating)): # if noise is np.random.rand 
+            if noise is True or isinstance(noise, (float, np.floating)):  # if noise is np.random.rand
                 pertub_v = (2 * np.random.rand(element_out.functionspace_V.dim()) - 1) * float(noise)
                 vec_noise = (np.ascontiguousarray(pertub_v),)
                 pertub_q = (2 * np.random.rand(element_out.functionspace_Q.dim()) - 1) * float(noise)
                 vec_noise += (np.ascontiguousarray(pertub_q),)
-            elif all(isinstance(n, np.ndarray) for n in noise): # if noise is np.ndarray
+            elif all(isinstance(n, np.ndarray) for n in noise):  # if noise is np.ndarray
                 vec_noise = (np.ascontiguousarray(noise[0]),)
                 vec_noise += (np.ascontiguousarray(noise[1]),)
             else:
@@ -195,7 +199,7 @@ class SetInitialCondition:
         else:
             info("Unknown element type in initial noise setting")
         return vec_noise
-    
+
     def visit_hdf5(self, path):
         """
         Visit and list all attributes in an HDF5 file.
@@ -205,12 +209,12 @@ class SetInitialCondition:
         path : str
             Path to the HDF5 file.
         """
-        
+
         import h5py
-        with h5py.File(path+'.h5', 'r') as h5file:
+        with h5py.File(path + '.h5', 'r') as h5file:
             # List all the datasets in the file    
             h5file.visit(print)
-          
+
 
 ## abandoned
 
@@ -288,5 +292,3 @@ def InitialCondition(flag=None, ic=None, noise=False, timestamp=0.0, mesh = None
             else:
                 info("Wrong Format of Initial Noise (Please give a float or tuple of two np.ndarray)")
 """
-
-

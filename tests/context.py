@@ -24,8 +24,10 @@ from src.FreqAnalys.EigenSolver import EigenAnalysis
 from src.FreqAnalys.ResolSolver import ResolventAnalysis
 from src.OptimControl.SystemModel import StateSpaceDAE2
 from src.OptimControl.BernoulliSolver import BernoulliFeedback
+from src.OptimControl.RiccatiSolver import GRiccatiDAE2Solver
+from src.OptimControl.LQESolver import LQESolver
+from src.OptimControl.LQRSolver import LQRSolver
 
-import matplotlib.pyplot as plt
 import tracemalloc
 import psutil
 import time

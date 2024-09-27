@@ -11,6 +11,8 @@ from ..Deps import *
 """
 This module provides classes that define different finite elements
 """
+
+
 class FiniteElementBase:
     """
     Base class for different finite elements used in FEniCS.
@@ -58,6 +60,7 @@ class combine_func:
     """
     Combine two separate function spaces.
     """
+
     def __init__(self, func_space1, func_space2):
         """
         combine two seperate function space
@@ -71,7 +74,7 @@ class combine_func:
 
         """
         self._func_space = (func_space1, func_space2)
-    
+
     def sub(self, ind):
         """
         Access a subspace.
@@ -88,7 +91,7 @@ class combine_func:
 
         """
         return self._func_space[ind]
-    
+
     def num_sub_spaces(self):
         """
         Return the number of subspaces.
@@ -99,7 +102,7 @@ class combine_func:
             Number of subspaces.
         """
         return len(self._func_space)
-    
+
     def dim(self):
         """
         Return the dimensions of the combined function spaces.
@@ -110,6 +113,7 @@ class combine_func:
             Dimensions of the two function spaces.
         """
         return (self._func_space[0].dim(), self._func_space[1].dim())
+
 
 #%%
 class TaylorHood(FiniteElementBase):
@@ -138,7 +142,8 @@ class TaylorHood(FiniteElementBase):
     ...
 
     """
-    def __init__(self, mesh=None, dim=2, order=(2,1), constrained_domain=None):
+
+    def __init__(self, mesh=None, dim=2, order=(2, 1), constrained_domain=None):
         """
         
 
@@ -162,7 +167,7 @@ class TaylorHood(FiniteElementBase):
         self.type = 'TaylorHood'
         self.set_functionspace()
         self.set_function()
-        
+
     def new(self):
         return TaylorHood(self.mesh, self.dim, self.order, self.constrained_domain)
 
@@ -171,8 +176,8 @@ class TaylorHood(FiniteElementBase):
         Create mixed function space: second order vector element space and first order finite element space.
 
         """
-        P2 = VectorElement("Lagrange", self.mesh.ufl_cell(), self.order[0], dim=self.dim) # velocity space
-        P1 = FiniteElement("Lagrange", self.mesh.ufl_cell(), self.order[1]) # pressure space
+        P2 = VectorElement("Lagrange", self.mesh.ufl_cell(), self.order[0], dim=self.dim)  # velocity space
+        P1 = FiniteElement("Lagrange", self.mesh.ufl_cell(), self.order[1])  # pressure space
         TH = MixedElement([P2, P1])
         self.functionspace = FunctionSpace(self.mesh, TH, constrained_domain=self.constrained_domain)
         info("Dimension of the function space: %g" % self.functionspace.dim())
@@ -183,10 +188,10 @@ class TaylorHood(FiniteElementBase):
 
         """
         super().set_function()
-        
-        self.v, self.q = split(self.tew) # test functions
-        self.tu, self.tp = split(self.tw) # trial functions
-        self.u, self.p = split(self.w) # functions
+
+        self.v, self.q = split(self.tew)  # test functions
+        self.tu, self.tp = split(self.tw)  # trial functions
+        self.u, self.p = split(self.w)  # functions
 
     def add_functions(self):
         """
@@ -194,6 +199,7 @@ class TaylorHood(FiniteElementBase):
 
         """
         return Function(self.functionspace)
+
 
 #%%
 class Decoupled(FiniteElementBase):
@@ -222,7 +228,8 @@ class Decoupled(FiniteElementBase):
     ...
 
     """
-    def __init__(self, mesh=None, dim=2, order=(2,1),constrained_domain=(None, None)):
+
+    def __init__(self, mesh=None, dim=2, order=(2, 1), constrained_domain=(None, None)):
         """
         
 
@@ -246,20 +253,22 @@ class Decoupled(FiniteElementBase):
         self.type = 'Decoupled'
         self.set_functionspace()
         self.set_function()
-        
+
     def new(self):
         return Decoupled(self.mesh, self.dim, self.order, self.constrained_domain)
-
 
     def set_functionspace(self):
         """
         Create separate function spaces for velocity and pressure.
 
         """
-        self.functionspace_V = VectorFunctionSpace(self.mesh, 'P', self.order[0],dim=self.dim, constrained_domain=self.constrained_domain[0])
-        self.functionspace_Q = FunctionSpace(self.mesh, 'P', self.order[1], constrained_domain=self.constrained_domain[1])
+        self.functionspace_V = VectorFunctionSpace(self.mesh, 'P', self.order[0], dim=self.dim,
+                                                   constrained_domain=self.constrained_domain[0])
+        self.functionspace_Q = FunctionSpace(self.mesh, 'P', self.order[1],
+                                             constrained_domain=self.constrained_domain[1])
         self.functionspace = combine_func(self.functionspace_V, self.functionspace_Q)
-        info("Dimension of the function space: Vel: %g    Pre: %g" % (self.functionspace_V.dim(),self.functionspace_Q.dim()))
+        info("Dimension of the function space: Vel: %g    Pre: %g" % (
+        self.functionspace_V.dim(), self.functionspace_Q.dim()))
 
     def set_function(self):
         """
@@ -284,6 +293,8 @@ class Decoupled(FiniteElementBase):
         """
 
         return (Function(self.functionspace_V), Function(self.functionspace_Q))
+
+
 #%%
 
 class PoissonPR(FiniteElementBase):
@@ -313,7 +324,8 @@ class PoissonPR(FiniteElementBase):
     ...
 
     """
-    def __init__(self, mesh=None, order=(1,0),constrained_domain=None):
+
+    def __init__(self, mesh=None, order=(1, 0), constrained_domain=None):
         """
         
 
@@ -335,10 +347,10 @@ class PoissonPR(FiniteElementBase):
         self.type = 'PoissonPR'
         self.set_functionspace()
         self.set_function()
-        
+
     def new(self):
         return PoissonPR(self.mesh, self.dim, self.order, self.constrained_domain)
-    
+
     def set_functionspace(self):
         """
         Create mixed function space: first order Lagrange element and zero order real finite element.
@@ -348,7 +360,7 @@ class PoissonPR(FiniteElementBase):
         R = FiniteElement("R", self.mesh.ufl_cell(), self.order[1])
         PR = MixedElement([P1, R])
         self.functionspace = FunctionSpace(self.mesh, PR, constrained_domain=self.constrained_domain)
-        
+
         info("Dimension of the function space: %g" % (self.functionspace.dim()))
 
     def set_function(self):
@@ -361,7 +373,6 @@ class PoissonPR(FiniteElementBase):
         self.q, self.d = split(self.tew)
         self.tp, self.tc = split(self.tw)
         self.p, self.c = split(self.w)
-        
 
     def add_functions(self):
         """

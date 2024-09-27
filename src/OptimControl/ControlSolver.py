@@ -9,10 +9,6 @@ Created on Tue Sep 10 00:51:37 2024
 """
 from ..Deps import *
 from ..OptimControl.RiccatiSolver import GRiccatiDAE2Solver
-try:
-    import pymess as mess
-except ImportError:
-    MESS = False
     
 class H2ControlSolver:
     """

@@ -14,13 +14,8 @@ for index-2 systems using the M.E.S.S. library.
 from ..Deps import *
 from joblib import Parallel, delayed
 
-try:
-    import pymess as mess
-except ImportError:
-    MESS = False
-    
 from ..OptimControl.SystemModel import StateSpaceDAE2
-from ..LinAlg.Utils import distribute_numbers
+from ..LinAlg.Utils import distribute_numbers, update_dict_in_depth, set_attr_in_depth
 
 
 class GRiccatiDAE2Solver:
@@ -28,6 +23,7 @@ class GRiccatiDAE2Solver:
     This class solves a generalized Riccati equation for an Index-2 system and computes
     various performance metrics such as H2 norm.
     """
+
     def __init__(self, ssmodel):
         """
         Initialize the Riccati solver with a state-space model.
@@ -59,33 +55,39 @@ class GRiccatiDAE2Solver:
         """
         self.Model = ssmodel
         self.param = {
-                    'solver_type': 'riccati_solver',
-                    'mess_options': mess.Options(),
-                    'riccati_solver': {}
+            'solver_type': 'riccati_solver',
+            'mess_options': mess.Options(),
+            'riccati_solver': {}
         }
         self._default_param()
-        
+        self.facZ = None
+        self.status = None
+
     def _default_param(self):
         """
         Set default parameters for the Riccati solver.
         """
+        param_adi = {'memory_usage': mess.MESS_MEMORY_HIGH,
+                     'paratype': mess.MESS_LRCFADI_PARA_ADAPTIVE_V,
+                     'output': 0,
+                     'res2_tol': 1e-8,
+                     'maxit': 2000
+                     }
+        param_nm = {'output': 1,
+                    'singleshifts': 0,
+                    'linesearch': 1,
+                    'res2_tol': 1e-5,
+                    'maxit': 30,
+                    'k0': None  #Initial Feedback
+                    }
         param_default = {'type': mess.MESS_OP_NONE,
-                         'adi.memory_usage': mess.MESS_MEMORY_HIGH,
-                         'adi.paratype': mess.MESS_LRCFADI_PARA_ADAPTIVE_V,
-                         'adi.output': 0,
-                         'adi.res2_tol': 1e-8,
-                         'adi.maxit': 2000,
-                         'nm.output': 1,
-                         'nm.singleshifts': 0,
-                         'nm.linesearch': 1,
-                         'nm.res2_tol': 1e-5,
-                         'nm.maxit': 30,
-                         #'nm.k0': None #Initial Feedback
-                         'lusolver':mess.MESS_DIRECT_UMFPACK_LU
+                         'lusolver': mess.MESS_DIRECT_UMFPACK_LU,
+                         'adi': param_adi,
+                         'nm': param_nm
                          }
-        self.update_parameters(param_default)
-        
-    def update_parameters(self, param):
+        self.update_riccati_params(param_default)
+
+    def update_riccati_params(self, param):
         """
         Update the Riccati solver parameters.
 
@@ -94,13 +96,11 @@ class GRiccatiDAE2Solver:
         param : dict
             A dictionary containing solver parameters to update.
         """
-        self.param['riccati_solver'].update(param)
-        for key, value in param.items():
-            if key != 'lusolver':
-                setattr(self.param['mess_options'], key, value)
-            else:
-                mess.direct_select(self.param['riccati_solver']['lusolver'])
-        
+        self.param['riccati_solver'] = update_dict_in_depth(self.param['riccati_solver'], param)
+        if 'lusolver' in param:
+            mess.direct_select(param.pop('lusolver'))
+        set_attr_in_depth(self.param['mess_options'], param)
+
     def _assign_model(self, ssmodel):
         """
         Assign the state-space model.
@@ -115,7 +115,7 @@ class GRiccatiDAE2Solver:
         TypeError
             If the input is not a valid state-space model.
         """
-        
+
         if isinstance(ssmodel, dict):
             self._M = ssmodel['M']
             self._A = ssmodel['A']
@@ -130,9 +130,8 @@ class GRiccatiDAE2Solver:
             self._C = ssmodel.C
         else:
             raise TypeError('Invalid type for state-space model.')
-        
-            
-    def solve_riccati(self, delta = -0.02):
+
+    def solve_riccati(self, delta=-0.02):
         """
         Solve the generalized Riccati equation.
         Provides the factor Z of the solution X = Z * Z^T.
@@ -152,8 +151,8 @@ class GRiccatiDAE2Solver:
         eqn = mess.EquationGRiccatiDAE2(self.param['mess_options'], self._M, self._A, self._G, self._B, self._C, delta)
         self.facZ, self.status = mess.lrnm(eqn, self.param['mess_options'])
         return self.status
-    
-    def squared_h2norm(self, MatQ, pid = None, chunk_size = 5000):
+
+    def squared_h2norm(self, MatQ, pid=None, chunk_size=5000):
         """
         Compute the squared H2 norm of the solution.
         H2-Norm = Q * Z * Z^T * Q^T, where Q = M^(1/2).
@@ -178,39 +177,41 @@ class GRiccatiDAE2Solver:
         pid = pid or num_cores - 1
         # the number of columns
         n = self.facZ.shape[1]
-        
+
         def h2norm_partial(start, end):
             return np.sum(np.square(MatQ @ self.facZ[:, start:end]))
-        
+
         if n <= chunk_size or pid == 1:
             return h2norm_partial(0, n)
         else:
             chunk_alloc = distribute_numbers(n, pid)
-            h2norms = np.zeros(pid) # square of h2 norm from each processing
+            h2norms = np.zeros(pid)  # square of h2 norm from each processing
+
             # Parallel computation of H2 norm
             def h2norm_parallel(proc):
                 # start index for this process
                 size = chunk_alloc[proc]
                 ind_s = int(np.sum(chunk_alloc[:proc]))
                 # computes 5000 columns at the same time over all processes
-                iters=int(np.ceil(1.0 * size * pid/chunk_size)) # second division for mempry saving
+                iters = int(np.ceil(1.0 * size * pid / chunk_size))  # second division for mempry saving
                 # pass if size is zero
                 if iters:
                     chunk_alloc_2nd = distribute_numbers(size, iters)
-                    sub_h2norm=0
+                    sub_h2norm = 0
                     for j in range(iters):
                         # pass if chunk_alloc_2nd[j] is zero
                         if chunk_alloc_2nd[j]:
                             # start and end indices
                             ind_s += int(np.sum(chunk_alloc_2nd[:j]))
-                            ind_e = ind_s+chunk_alloc_2nd[j]
+                            ind_e = ind_s + chunk_alloc_2nd[j]
                             # h2norm for this part of facZ[:,ind_s:ind_z]
                             sub_h2norm += h2norm_partial(ind_s, ind_e)
-                    h2norms[proc]=sub_h2norm
+                    h2norms[proc] = sub_h2norm
+
             # Parallel computation of H2 norm
-            Parallel(n_jobs=pid,require='sharedmem')(delayed(h2norm_parallel)(proc) for proc in range(pid))
+            Parallel(n_jobs=pid, require='sharedmem')(delayed(h2norm_parallel)(proc) for proc in range(pid))
             return np.sum(h2norms)
-    
+
     def normvec_T(self, K):
         """
         Compute the contribution of each estimator/regulator on the H2 Norm?
@@ -225,9 +226,9 @@ class GRiccatiDAE2Solver:
         numpy array
             Diagonal matrix representing the contribution of each estimator.
         """
-        
-        if K.shape[1] !=  self.facZ.shape[0]:
+
+        if K.shape[1] != self.facZ.shape[0]:
             K = K.T
         norm_T = K @ self.facZ
-        
-        return np.diag(norm_T@norm_T.T)
+
+        return np.diag(norm_T @ norm_T.T)

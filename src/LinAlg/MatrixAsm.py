@@ -15,6 +15,7 @@ from ..Deps import *
 from ..LinAlg.MatrixOps import AssembleMatrix, ConvertMatrix
 from ..LinAlg.Utils import get_subspace_info, find_subspace_index
 
+
 def IdentMatProl(element, index=None):
     """
     Construct the prolongation matrix P, which adds the subspace specified by index.
@@ -34,29 +35,30 @@ def IdentMatProl(element, index=None):
     """
     diag = np.ones(element.functionspace.dim())
     sub_spaces = get_subspace_info(element.functionspace)
-    if index is None: # if None, delete the last subspace
-        index = np.sum(sub_spaces)-1
-    
-    if isinstance(index, (int, np.integer)): # make a list to iterate
+    if index is None:  # if None, delete the last subspace
+        index = np.sum(sub_spaces) - 1
+
+    if isinstance(index, (int, np.integer)):  # make a list to iterate
         index = [index]
     elif not isinstance(index, (list, tuple)):
         raise TypeError('Wrong type of subspace index specified')
-    
-    for ind in index: # set zeros in diagonal for multiple subspaces
+
+    for ind in index:  # set zeros in diagonal for multiple subspaces
         sub_index = find_subspace_index(ind, sub_spaces)
         # get subsapce to apply
         subfunc = element.functionspace
         for i in sub_index:
             subfunc = subfunc.sub(i)
         # get indices of subspace in global dofs
-        subdofs_index = subfunc.dofmap().dofs() 
+        subdofs_index = subfunc.dofmap().dofs()
         # set identity array with zeros for the specified subspace
-        diag[subdofs_index]=0
-    
+        diag[subdofs_index] = 0
+
     A = sp.diags(diag).tocsr()
     # Remove zero columns and return
     indices = A.nonzero()
     return A[:, indices[1]]
+
 
 def MatWgt(element):
     """
@@ -72,10 +74,11 @@ def MatWgt(element):
     M : scipy.sparse.csr_matrix
         Assembled mass/weight matrix.
     """
-    
-    expr = inner(element.tw,element.tew)*dx
+
+    expr = inner(element.tw, element.tew) * dx
     M = AssembleMatrix(expr)
     return M
+
 
 def IdentMatBC(element, bcs=[]):
     """
@@ -93,14 +96,15 @@ def IdentMatBC(element, bcs=[]):
     scipy.sparse.csr_matrix
         Identity matrix with zeros for boundary condition rows.
     """
-    
+
     I = sp.identity(element.functionspace.dim())
-    
+
     expr = Constant(0.0) * inner(element.tw, element.tew) * dx(99)
     Z = AssembleMatrix(expr, bcs=bcs)
     Z.eliminate_zeros()
 
     return I - Z
+
 
 def IdentMatSub(element, bound=None):
     """
@@ -118,7 +122,7 @@ def IdentMatSub(element, bound=None):
     scipy.sparse.csr_matrix
         Identity matrix of size nxn with zeros for elements outside the subdomain.
     """
-    
+
     if bound is None:
         I = sp.identity(element.functionspace.dim())
         return I
@@ -126,17 +130,19 @@ def IdentMatSub(element, bound=None):
         Z = PETScMatrix().zero()
         sub_spaces = get_subspace_info(element.functionspace)
         num_subspaces = np.sum(sub_spaces)
+
         class Omega_1(SubDomain):
             def inside(self, x, on_boundary):
                 return eval(bound)
-            
-        subdomain1 = Omega_1()  
-        bc=DirichletBC(element.functionspace, Constant((0,)*num_subspaces), subdomain1)
+
+        subdomain1 = Omega_1()
+        bc = DirichletBC(element.functionspace, Constant((0,) * num_subspaces), subdomain1)
         bc.apply(Z)
         return ConvertMatrix(Z)
     else:
         raise TypeError('Wrong type of subdomain condition specified.')
-        
+
+
 def MatP(element):
     """
     Prolongation matrix for resolvent analysis.
@@ -154,11 +160,10 @@ def MatP(element):
         Prolongation matrix.
     """
     P = IdentMatProl(element)
-    return P # size k x k
+    return P  # size k x k
 
 
 def MatM(element, bcs=[]):
-
     """
     Mass/weight matrix with only the velocity subspace for resolvent analysis.
     Boundary condition applied in the asymmetric way
@@ -176,11 +181,11 @@ def MatM(element, bcs=[]):
     scipy.sparse.csr_matrix
         The mass/weight matrix of size k which is restricted to the velocity subspace.
     """
-    
+
     P = MatP(element)
     M = MatWgt(element)
     Ibc = IdentMatBC(element, bcs)
-    
+
     return P.transpose() * Ibc * M * P
 
 
@@ -198,11 +203,12 @@ def MatQ(element):
     scipy.sparse.csr_matrix
         The mass/weight matrix of size k which is restricted to the velocity subspace.
     """
-    
+
     P = MatP(element)
     M = MatWgt(element)
-    
+
     return P.transpose() * M * P
+
 
 def MatD(element, bound):
     """
@@ -221,12 +227,8 @@ def MatD(element, bound):
         Prolongation matrix of size k x m.
 
     """
-    
+
     P = IdentMatProl(element)
     D = IdentMatSub(element, bound)
     Dp = P.transpose() * D * P
-    return Dp[:, Dp.nonzero()[1]] # size k x m
-    
-    
-
-
+    return Dp[:, Dp.nonzero()[1]]  # size k x m

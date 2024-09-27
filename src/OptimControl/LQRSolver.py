@@ -15,16 +15,13 @@ from ..Deps import *
 from ..OptimControl.RiccatiSolver import GRiccatiDAE2Solver
 from ..OptimControl.BernoulliSolver import BernoulliFeedback
 from ..LinAlg.Utils import distribute_numbers
-try:
-    import pymess as mess
-except ImportError:
-    MESS = False
- 
-    
+
+
 class LQRSolver(GRiccatiDAE2Solver):
     """
     Solver for the Linear Quadratic Regulator (LQR) problem for Index-2 systems.
     """
+
     def __init__(self, ssmodel):
         """
         Initialize the LQR solver with the state-space model.
@@ -34,12 +31,14 @@ class LQRSolver(GRiccatiDAE2Solver):
         ssmodel : dict or StateSpaceDAE2
             State-space model containing system matrices.
         """
-        
+
         super().__init__(self._initialise_model(ssmodel))
-        self._k0=BernoulliFeedback(ssmodel)
-        self.param['solver_type']='lqr_solver'
+        self._k0 = BernoulliFeedback(ssmodel)
+        self.param['solver_type'] = 'lqr_solver'
+        self.param['initial_feedback'] = self._k0.param
         self._default_param()
-        
+        self.control_penalty(beta=1)  # initialise Key 'B_pen_mat' in ssmodel
+
     def _initialise_model(self, ssmodel):
         """
         Initialize the model with necessary matrices.
@@ -54,14 +53,14 @@ class LQRSolver(GRiccatiDAE2Solver):
         dict
             Initialized model with system matrices.
         """
-        
+
         model = {'A': ssmodel['A'],
                  'M': ssmodel['M'],
                  'G': ssmodel['G'],
                  'B': ssmodel['B'],
                  'C': ssmodel['C']}
         return model
-        
+
     def _default_param(self):
         """
         Initialize default parameters for the LQR solver.
@@ -70,30 +69,33 @@ class LQRSolver(GRiccatiDAE2Solver):
         -------
         None
         """
-        
+        param_adi = {'memory_usage': mess.MESS_MEMORY_HIGH,
+                     'paratype': mess.MESS_LRCFADI_PARA_ADAPTIVE_V,
+                     'output': 0,
+                     'res2_tol': 1e-8,
+                     'maxit': 2000
+                     }
+        param_nm = {'output': 1,
+                    'singleshifts': 0,
+                    'linesearch': 1,
+                    'res2_tol': 1e-5,
+                    'maxit': 30,
+                    'k0': None  #Initial Feedback
+                    }
         param_default = {'type': mess.MESS_OP_TRANSPOSE,
-                         'adi.memory_usage': mess.MESS_MEMORY_HIGH,
-                         'adi.paratype': mess.MESS_LRCFADI_PARA_ADAPTIVE_V,
-                         'adi.output': 0,
-                         'adi.res2_tol': 1e-8,
-                         'adi.maxit': 2000,
-                         'nm.output': 1,
-                         'nm.singleshifts': 0,
-                         'nm.linesearch': 1,
-                         'nm.res2_tol': 1e-5,
-                         'nm.maxit': 30,
-                         #'nm.k0': None #Initial Feedback
-                         'lusolver':mess.MESS_DIRECT_UMFPACK_LU
+                         'lusolver': mess.MESS_DIRECT_UMFPACK_LU,
+                         'adi': param_adi,
+                         'nm': param_nm
                          }
-        self.update_parameters(param_default)
-        
+        self.update_riccati_params(param_default)
+
     def init_feedback(self):
         """
         Initialize feedback using Bernoulli feedback solver.
         """
-        param = {'nm.k0': self._k0.solve(transpose=False)}
-        self.update_parameters(param)
-        
+        param = {'nm': {'k0': self._k0.solve(transpose=False)}}
+        self.update_riccati_params(param)
+
     def control_penalty(self, beta):
         """
         Set the magnitude of control penalty in the LQR formulation.
@@ -111,18 +113,18 @@ class LQRSolver(GRiccatiDAE2Solver):
             If the provided beta is not a valid type.
         """
 
-        n=self.Model['B'].shape[1]
+        n = self.Model['B'].shape[1]
         if isinstance(beta, (int, np.integer, float, np.floating)):
-            mat = 1.0/beta * np.identity(n)
+            mat = 1.0 / beta * np.identity(n)
         elif isinstance(beta, (list, tuple, np.ndarray)):
             mat = np.diag(np.reciprocal(beta[:n]))
         else:
             raise TypeError('Invalid type for control penalty.')
-        
+
         self.Model['B_pen_mat'] = mat
-        self.Model['B'] = self.Model['B'] @ mat 
-    
-    def measure(self, Cz = None):
+        self.Model['B'] = self.Model['B'] @ mat
+
+    def measure(self, Cz=None):
         """
         Set the square root of the response weight matrix for the LQR formulation.
 
@@ -136,12 +138,12 @@ class LQRSolver(GRiccatiDAE2Solver):
         ValueError
             If the shape of Cz does not match the shape of the existing C matrix.
         """
-        
+
         if Cz is not None and Cz.shape[1] == self.Model['C'].shape[1]:
             self.Model['C'] = Cz
         else:
             raise ValueError('Incorrect shape for measurement matrix.')
-               
+
     def regulator(self):
         """
         Compute the linear quadratic regulator (LQR) from the solution of the LQR problem.
@@ -153,8 +155,8 @@ class LQRSolver(GRiccatiDAE2Solver):
         """
 
         return self.Model['B_pen_mat'] @ self.Model['B'].T @ self.facZ @ self.facZ.T
-    
-    def solve(self, MatQ=None, delta = -0.02, pid = None, Kf = None):
+
+    def solve(self, MatQ=None, delta=-0.02, pid=None, Kf=None):
         """
         Solve the LQR problem and return results.
 
@@ -180,9 +182,9 @@ class LQRSolver(GRiccatiDAE2Solver):
         norm_lqe : numpy array
             LQE norm.
         """
-        return self.iter_solve(1, MatQ, delta, pid, Kr)
-    
-    def iter_solve(self, num_iter = 1, MatQ=None, delta = -0.02, pid = None, Kf = None):
+        return self.iter_solve(1, MatQ, delta, pid, Kf)
+
+    def iter_solve(self, num_iter=1, MatQ=None, delta=-0.02, pid=None, Kf=None):
         """
         Solve the LQR problem iteratively using an accumulation method.
 
@@ -216,15 +218,15 @@ class LQRSolver(GRiccatiDAE2Solver):
         n = C.shape[0]
         alloc = distribute_numbers(n, num_iter)
         # initilise results
-        Kr=np.zeros(self.Model['B'].T.shape)
-        Status=[]
-        H2NormS=0
-        norm_lqe=None
-        
+        Kr = np.zeros(self.Model['B'].T.shape)
+        Status = []
+        H2NormS = 0
+        norm_lqe = None
+
         for i in range(num_iter):
             if i > 0:
-                self.Model['A'] += - sp.csr_matrix(self.Model['B'])  @ sp.csr_matrix(Kr_sub @ self.Model['M'])
-            self.Model['A'].sort_indices() # sort data indices, prevent unmfpack error -8
+                self.Model['A'] += - sp.csr_matrix(self.Model['B']) @ sp.csr_matrix(Kr_sub @ self.Model['M'])
+            self.Model['A'].sort_indices()  # sort data indices, prevent unmfpack error -8
             # allocate measure modes
             ind_s = int(np.sum(alloc[:i]))
             ind_e = ind_s + alloc[i]
@@ -235,16 +237,17 @@ class LQRSolver(GRiccatiDAE2Solver):
             # collect results
             Status.append(status_sub)
             Kr += Kr_sub
-            
+
             if MatQ is not None:
-                H2NormS += self.squared_h2norm(MatQ, pid)
-            
+                H2NormS = self.squared_h2norm(MatQ, pid) if i == 0 else H2NormS + self.squared_h2norm(MatQ, pid)
+
             if Kf is not None:
                 norm_lqe = self.normvec_T(Kf) if i == 0 else norm_lqe + self.normvec_T(Kf)
 
             # delete results to save memory
-            del self.facZ
-            gc.collect()
-        
+            if num_iter > 1:
+                del self.facZ
+                gc.collect()
+
         Status.append({'alloc_mode': alloc})
         return Kr, Status, H2NormS, norm_lqe

@@ -13,14 +13,16 @@ This module provides classes for generating common input/output vectors for thes
 from ..Deps import *
 
 from ..Eqns.NavierStokes import Incompressible
-from ..LinAlg.MatrixOps import AssembleMatrix, AssembleVector, ConvertVector,ConvertMatrix, InverseMatrixOperator
+from ..LinAlg.MatrixOps import AssembleMatrix, AssembleVector, ConvertVector, ConvertMatrix, InverseMatrixOperator
 from ..LinAlg.Utils import allclose_spmat, get_subspace_info, find_subspace_index
+
 
 #%%
 class VectorGenerator:
     """
     A factory class to generate common input and output vectors for the FrequencyResponse class.
     """
+
     def __init__(self, element, bc_obj=None):
         """
         Initialize the VectorGenerator.
@@ -32,14 +34,13 @@ class VectorGenerator:
         bc_obj : SetBoundaryCondition, optional
             Boundary condition object. Default is None.
         """
-        
-        self.element=element#.new()
+
+        self.element = element  #.new()
         self.boundary_condition = bc_obj
         if bc_obj is not None:
             self.bc_list = self.boundary_condition.bc_list
             self._assemble_bcs()
-            
-    
+
     def _assemble_vec(self, expr, test_func, bc_list=[]):
         """
         Assemble an expression or function into a vector (variational form).
@@ -58,11 +59,11 @@ class VectorGenerator:
         numpy array
             Assembled vector as a numpy array.
         """
-        
+
         var_form = dot(expr, test_func) * dx
         vec_wgt = AssembleVector(var_form, bc_list)
         return np.asarray(vec_wgt).flatten()
-    
+
     def _assemble_mat(self, trial_func, test_func, bc_list=[]):
         """
         Assemble an unknown function into a matrix (variational form).
@@ -81,19 +82,18 @@ class VectorGenerator:
         scipy.sparse.csr_matrix
             Assembled matrix in CSR format.
         """
-        
 
         var_form = dot(trial_func, test_func) * dx
         mat_wgt = AssembleMatrix(var_form, bc_list)
-        return mat_wgt # scipy.sparse.csr_matrix
-        
+        return mat_wgt  # scipy.sparse.csr_matrix
+
     def _assemble_bcs(self):
         """
         Assemble matrices and vectors for boundary conditions.
         """
         self.bc_mat = self.boundary_condition.MatrixBC_rhs()
         self.bc_vec = self.boundary_condition.VectorBC_rhs()
-        
+
     def set_boundarycondition(self, vec):
         """
         Apply boundary conditions to a RHS vector. (consider to mutiply variational weighted matrix first)
@@ -108,10 +108,10 @@ class VectorGenerator:
         numpy array
             Vector with boundary conditions applied.
         """
-        vec_bc = self.bc_mat * ConvertVector(vec,flag='Vec2PETSc') + self.bc_vec
-        
+        vec_bc = self.bc_mat * ConvertVector(vec, flag='Vec2PETSc') + self.bc_vec
+
         return vec_bc.get_local()
-        
+
     def variational_weight(self, vec):
         """
         Multiply a vector by the variational weight matrix for linear problems.
@@ -126,31 +126,30 @@ class VectorGenerator:
         numpy array
             Weighted vector.
         """
-        
+
         if not hasattr(self, 'Mat_wgt'):
             self.Mat_wgt = self._assemble_mat(self.element.tw, self.element.tew)
-            
-        vec_wgt = ConvertMatrix(self.Mat_wgt, flag='Mat2PETSc') * ConvertVector(vec,flag='Vec2PETSc')
+
+        vec_wgt = ConvertMatrix(self.Mat_wgt, flag='Mat2PETSc') * ConvertVector(vec, flag='Vec2PETSc')
         return vec_wgt.get_local()
-    
 
     # weighted vector with bcs
     # def gaussian_vector(self, center, sigma, scale = 1.0, index = 0):
-        
+
     #     sub_spaces = get_subspace_info(self.element.functionspace)
     #     sub_index = find_subspace_index(index, sub_spaces)
-        
+
     #     v = self.element.tew
     #     for i in sub_index:
     #         v = v[i]
-        
+
     #     order = self.element.order[sub_index[0]]
     #     expr= self._gaussian_expr(center, sigma, scale, order)
-        
+
     #     return self._assemble(expr, v) # weighted vector
-    
+
     # non-weighted vector, easy for plot/check
-    def _gaussian_expr(self, center, sigma, scale = 1.0, order = None):
+    def _gaussian_expr(self, center, sigma, scale=1.0, order=None):
         """
         Define the Gaussian expression used to generate a Gaussian vector.
 
@@ -174,18 +173,18 @@ class VectorGenerator:
             order = self.element.order[0]
         dim = self.element.dim
 
-        expr0 = 'scale * pow(pow(2.0*pi, dim/2) * pow(sigma, dim), -1)' # general formula
+        expr0 = 'scale * pow(pow(2.0*pi, dim/2) * pow(sigma, dim), -1)'  # general formula
         expr1 = 'pow(-2.0*pow(sigma, 2),-1)'
         expr2 = '('
         for i in range(self.element.dim):
-            expr2 += 'pow(x['+str(i)+']-'+str(center[i])+',2)'
+            expr2 += 'pow(x[' + str(i) + ']-' + str(center[i]) + ',2)'
             if i < self.element.dim - 1:
                 expr2 += '+'
         expr2 += ')'
-        expr = Expression(expr0+'*exp('+expr1+'*'+expr2+')', degree=order, scale = scale,sigma = sigma, dim = dim)
+        expr = Expression(expr0 + '*exp(' + expr1 + '*' + expr2 + ')', degree=order, scale=scale, sigma=sigma, dim=dim)
         return expr
-    
-    def gaussian_vector(self, center, sigma, scale = 1.0, index = 0, limit = None):
+
+    def gaussian_vector(self, center, sigma, scale=1.0, index=0, limit=None):
 
         """
         Generate a vector with a Gaussian distribution.
@@ -208,7 +207,7 @@ class VectorGenerator:
         numpy array
             Generated Gaussian vector.
         """
-        
+
         # get subspace info
         sub_spaces = get_subspace_info(self.element.functionspace)
         sub_index = find_subspace_index(index, sub_spaces)
@@ -221,29 +220,29 @@ class VectorGenerator:
             w_sub = w_sub.sub(i)
         # form the expression
         order = self.element.order[sub_index[0]]
-        expr= self._gaussian_expr(center, sigma, scale, order)
+        expr = self._gaussian_expr(center, sigma, scale, order)
         # Interpolate the expression into the subspace
-        func=interpolate(expr, subfunc.collapse())
+        func = interpolate(expr, subfunc.collapse())
         # Assign the interpolated function to the correct subspace of the mixed function
         assign(w_sub, func)
-        
+
         if limit is not None:
             # Convert the point coordinates to a Point object
             point = Point(*center)
             # get coordinates of global dofs
             dofs_coords = self.element.functionspace.tabulate_dof_coordinates()
             # get indices of subspace in global dofs and the corresponding coordinates
-            subdofs_index = subfunc.dofmap().dofs() 
+            subdofs_index = subfunc.dofmap().dofs()
             vertex_coords = dofs_coords[subdofs_index, :]
             # find the global vertex index outside the limtation
-            vertex_index = np.asarray(subdofs_index)[np.asarray([point.distance(Point(*vertex)) for vertex in vertex_coords])>limit*sigma]
+            vertex_index = np.asarray(subdofs_index)[
+                np.asarray([point.distance(Point(*vertex)) for vertex in vertex_coords]) > limit * sigma]
             # Set zero at the choosen vertex 
             w.vector()[vertex_index] = 0
 
         return w.vector().get_local()
-        
-    
-    def point_vector(self, coord, index, scale = 1.0):
+
+    def point_vector(self, coord, index, scale=1.0):
         """
         Apply a point source at specified coordinates to a subspace of a mixed element.
 
@@ -262,24 +261,24 @@ class VectorGenerator:
             Vector with the point source applied.
             np.sum(vec)=1
         """
-        
+
         # get subspace info
         sub_spaces = get_subspace_info(self.element.functionspace)
         sub_index = find_subspace_index(index, sub_spaces)
-        
+
         # Access the subspace
         w = self.element.add_functions()
         subfunc = self.element.functionspace
         for i in sub_index:
             subfunc = subfunc.sub(i)
-        
+
         pt = Point(*coord)
         point_source = PointSource(subfunc, pt, scale)
         point_source.apply(w.vector())
         w.vector().apply("insert")
-        
+
         return np.asarray(ConvertVector(w.vector())).flatten()
-            
+
     def unit_vector(self, coord, index, scale=1.0):
 
         """
@@ -313,7 +312,7 @@ class VectorGenerator:
             subfunc = subfunc.sub(i)
 
         # get indices of subspace in global dofs and the corresponding coordinates
-        subdofs_index = subfunc.dofmap().dofs() 
+        subdofs_index = subfunc.dofmap().dofs()
         vertex_coords = dofs_coords[subdofs_index, :]
 
         # Convert the point coordinates to a Point object
@@ -321,13 +320,12 @@ class VectorGenerator:
         # find the closest global vertex index 
         closest_vertex_index = subdofs_index[np.argmin([point.distance(Point(*vertex)) for vertex in vertex_coords])]
         # closet coordinate (not exactly equals to the given coordinate)
-        coord_cloest=dofs_coords[closest_vertex_index]
+        coord_cloest = dofs_coords[closest_vertex_index]
         # Set the value at the closest vertex in the specified subspace
         w.vector()[closest_vertex_index] = scale
 
         return w.vector().get_local(), tuple(coord_cloest)
-    
-            
+
     def random_vector(self, distribution='uniform', seed=None):
         """
         Generate a random vector using a specified distribution.
@@ -345,17 +343,17 @@ class VectorGenerator:
             A random vector of the specified length.
         """
         vector_length = self.element.functionspace.dim()
-        
+
         if seed is not None:
             np.random.seed(seed)
-        
+
         if distribution == 'uniform':
             return np.random.rand(vector_length)
         elif distribution == 'normal':
             return np.random.randn(vector_length)
         else:
             raise ValueError(f"Unsupported distribution type: {distribution}")
-    
+
     # already weighted due to the physical nature
     def _force_expr(self, mark, Re):
         """
@@ -375,18 +373,18 @@ class VectorGenerator:
             1st index for direction, 2nd index for component
 
         """
-        eqn=Incompressible(self.element, self.boundary_condition.set_boundary, Re)
-        force_expr=eqn.force_expr()
-        
+        eqn = Incompressible(self.element, self.boundary_condition.set_boundary, Re)
+        force_expr = eqn.force_expr()
+
         dim = self.element.dim
 
         force = ()
         for i in range(dim):
             temp = (assemble((force_expr[0][i]) * eqn.ds(mark)), assemble((force_expr[1][i]) * eqn.ds(mark)))
-            force += (temp,) 
-            
-        return force # 1st index for direction, 2nd index for component
-    
+            force += (temp,)
+
+        return force  # 1st index for direction, 2nd index for component
+
     def force_vector(self, mark=None, dirc=None, comp=None, Re=None, reuse=True):
         """
         evaluate the force on the body (lift or drag)
@@ -415,12 +413,12 @@ class VectorGenerator:
         # force act on the body
         if reuse is False or not hasattr(self, 'force'):
             self.force = self._force_expr(mark, Re)
-        
+
         if comp is None:
-            return self.force[dirc][0].get_local()+self.force[dirc][1].get_local()
+            return self.force[dirc][0].get_local() + self.force[dirc][1].get_local()
         else:
             return self.force[dirc][comp].get_loca()
-        
+
     def unit_oscaccel_vector(self, dirc, s):
         """
         Generate a vector for fluid oscillating acceleration.
@@ -445,17 +443,19 @@ class VectorGenerator:
         """
         sub_spaces = get_subspace_info(self.element.functionspace)
         sub_index = find_subspace_index(dirc, sub_spaces)
-        
+
         tew = self.element.tew
         for i in sub_index:
             tew = tew.sub(i)
-        
-        vec = self._assemble_vec(Constant(1.0), tew, self.bc_list) + (1.0/s - 1.0) * self._assemble_vec(Constant(0.0), tew, self.bc_list)
-                                                                            # set -1 at bc, and set zeros at rest
-              # set 1 at bc and weighted uniform accel at rest       # set vel bc as 1/s, zero at rest
-        
+
+        vec = self._assemble_vec(Constant(1.0), tew, self.bc_list) + (1.0 / s - 1.0) * self._assemble_vec(Constant(0.0),
+                                                                                                          tew,
+                                                                                                          self.bc_list)
+        # set -1 at bc, and set zeros at rest
+        # set 1 at bc and weighted uniform accel at rest       # set vel bc as 1/s, zero at rest
+
         return vec
-    
+
     def unit_oscvel_vector(self, dirc, s):
         """
         Generate a vector for fluid oscillating velocity.
@@ -480,15 +480,17 @@ class VectorGenerator:
         """
         sub_spaces = get_subspace_info(self.element.functionspace)
         sub_index = find_subspace_index(dirc, sub_spaces)
-        
+
         tew = self.element.tew
         for i in sub_index:
             tew = tew.sub(i)
-        
-        vec = s * self._assemble_vec(Constant(1.0), tew, self.bc_list) + ( 1.0 - s) *self._assemble_vec(Constant(0.0), tew, self.bc_list)
-        
+
+        vec = s * self._assemble_vec(Constant(1.0), tew, self.bc_list) + (1.0 - s) * self._assemble_vec(Constant(0.0),
+                                                                                                        tew,
+                                                                                                        self.bc_list)
+
         return vec
-    
+
     def unit_oscdisp_vector(self, dirc, s):
         """
         Generate a vector for fluid oscillating displacement.
@@ -514,15 +516,16 @@ class VectorGenerator:
         """
         sub_spaces = get_subspace_info(self.element.functionspace)
         sub_index = find_subspace_index(dirc, sub_spaces)
-        
+
         tew = self.element.tew
         for i in sub_index:
             tew = tew.sub(i)
-            
-        vec = s * s * self._assemble_vec(Constant(1.0), tew, self.bc_list) + ( s - s * s) *self._assemble_vec(Constant(0.0), tew, self.bc_list)
-        
+
+        vec = s * s * self._assemble_vec(Constant(1.0), tew, self.bc_list) + (s - s * s) * self._assemble_vec(
+            Constant(0.0), tew, self.bc_list)
+
         return vec
-    
+
     def unit_rotvel_vector(self, mark, s=None, radius=1.0, center=(0.0, 0.0)):
         """
         Generate a vector for rotating velocity of a 2D cylinder at the origin.
@@ -549,16 +552,17 @@ class VectorGenerator:
 
         """
         index = 0
-        tew = self.element.tew.sub(index) 
-        
-        vel_rotate = Expression(('(x[1]-center[1])/radius', '(-x[0]+center[0])/radius'), 
-                                degree=self.element.order[index], center=center, radius = radius)
-        BC_rotate = DirichletBC(self.element.functionspace.sub(index), vel_rotate, self.boundary_condition.boundary, mark, method="geometric")
-        
+        tew = self.element.tew.sub(index)
+
+        vel_rotate = Expression(('(x[1]-center[1])/radius', '(-x[0]+center[0])/radius'),
+                                degree=self.element.order[index], center=center, radius=radius)
+        BC_rotate = DirichletBC(self.element.functionspace.sub(index), vel_rotate, self.boundary_condition.boundary,
+                                mark, method="geometric")
+
         vec = self._assemble_vec(Constant((0.0, 0.0)), tew, [BC_rotate])
-        
+
         return vec
-    
+
     def unit_rotaccel_vector(self, mark, s, radius=1.0, center=(0.0, 0.0)):
         """
         Generate a vector for rotating acceleration of a 2D cylinder at the origin.
@@ -586,23 +590,25 @@ class VectorGenerator:
 
         """
         index = 0
-        tew = self.element.tew.sub(index) 
-        
-        vel_rotate = Expression(('(x[1]-center[1])/radius', '(-x[0]+center[0])/radius'), 
-                                degree=self.element.order[index], center=center, radius = radius)
+        tew = self.element.tew.sub(index)
 
-        BC_clean = DirichletBC(self.element.functionspace.sub(index), Constant((0.0, 0.0)), self.boundary_condition.boundary, mark, method="geometric")
-        BC_rotate = DirichletBC(self.element.functionspace.sub(index), vel_rotate, self.boundary_condition.boundary, mark, method="geometric")
-        
+        vel_rotate = Expression(('(x[1]-center[1])/radius', '(-x[0]+center[0])/radius'),
+                                degree=self.element.order[index], center=center, radius=radius)
+
+        BC_clean = DirichletBC(self.element.functionspace.sub(index), Constant((0.0, 0.0)),
+                               self.boundary_condition.boundary, mark, method="geometric")
+        BC_rotate = DirichletBC(self.element.functionspace.sub(index), vel_rotate, self.boundary_condition.boundary,
+                                mark, method="geometric")
+
         bcs0 = self.bc_list + [BC_clean]
         bcsr = [BC_rotate]
-        
-        vec0 = self._assemble_vec(Constant((0.0, 0.0)), tew, bcs0) # bc at other boundary, set zero at body surface
-        vec_r = 1.0/s * self._assemble_vec(Constant((0.0, 0.0)), tew, bcsr) # set bc at body surface
-        
-        return vec0+vec_r
-    
-    def unit_rotangle_vector(self, mark ,s, radius=1.0, center=(0.0, 0.0)):
+
+        vec0 = self._assemble_vec(Constant((0.0, 0.0)), tew, bcs0)  # bc at other boundary, set zero at body surface
+        vec_r = 1.0 / s * self._assemble_vec(Constant((0.0, 0.0)), tew, bcsr)  # set bc at body surface
+
+        return vec0 + vec_r
+
+    def unit_rotangle_vector(self, mark, s, radius=1.0, center=(0.0, 0.0)):
         """
         Generate a vector for rotating angle of a 2D cylinder at the origin.
         
@@ -632,20 +638,20 @@ class VectorGenerator:
 
         """
         index = 0
-        tew = self.element.tew.sub(index) 
-        
-        vel_rotate = Expression(('(x[1]-center[1])/radius', '(-x[0]+center[0])/radius'), 
-                                degree=self.element.order[index], center=center, radius = radius)
+        tew = self.element.tew.sub(index)
 
-        BC_clean = DirichletBC(self.element.functionspace.sub(index), Constant((0.0, 0.0)), self.boundary_condition.boundary, mark, method="geometric")
-        BC_rotate = DirichletBC(self.element.functionspace.sub(index), vel_rotate, self.boundary_condition.boundary, mark, method="geometric")
-        
+        vel_rotate = Expression(('(x[1]-center[1])/radius', '(-x[0]+center[0])/radius'),
+                                degree=self.element.order[index], center=center, radius=radius)
+
+        BC_clean = DirichletBC(self.element.functionspace.sub(index), Constant((0.0, 0.0)),
+                               self.boundary_condition.boundary, mark, method="geometric")
+        BC_rotate = DirichletBC(self.element.functionspace.sub(index), vel_rotate, self.boundary_condition.boundary,
+                                mark, method="geometric")
+
         bcs0 = self.bc_list + [BC_clean]
         bcsr = [BC_rotate]
-        
-        vec0 = self._assemble_vec(Constant((0.0, 0.0)), tew, bcs0) # bc at other boundary, set zero at body surface
-        vec_r = s * self._assemble_vec(Constant((0.0, 0.0)), tew, bcsr) # set bc at body surface
-        
-        return vec0+vec_r
-    
-    
+
+        vec0 = self._assemble_vec(Constant((0.0, 0.0)), tew, bcs0)  # bc at other boundary, set zero at body surface
+        vec_r = s * self._assemble_vec(Constant((0.0, 0.0)), tew, bcsr)  # set bc at body surface
+
+        return vec0 + vec_r
