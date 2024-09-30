@@ -10,7 +10,6 @@ from context import *
 
 print('------------ Testing Resolvent Analysis Solver ------------')
 
-tracemalloc.start()
 process = psutil.Process()
 cpu_usage_before = psutil.cpu_percent(interval=None, percpu=True)
 start_time = time.time()
@@ -61,8 +60,6 @@ print(f'Re = {Re}\nEigenvalues = {solver.energy_amp}')
 elapsed_time = time.time() - start_time
 cpu_usage_after = psutil.cpu_percent(interval=None, percpu=True)
 cpu_usage_diff = [after - before for before, after in zip(cpu_usage_before, cpu_usage_after)]
-current, peak = tracemalloc.get_traced_memory()
-tracemalloc.stop()
 print('Elapsed Time = %e' % (elapsed_time))
 print(f"Current memory usage: {current / (1024 * 1024):.2f} MB")
 print(f"Peak memory usage: {peak / (1024 * 1024):.2f} MB")

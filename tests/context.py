@@ -28,6 +28,5 @@ from src.OptimControl.RiccatiSolver import GRiccatiDAE2Solver
 from src.OptimControl.LQESolver import LQESolver
 from src.OptimControl.LQRSolver import LQRSolver
 
-import tracemalloc
 import psutil
 import time

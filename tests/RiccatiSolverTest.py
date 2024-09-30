@@ -10,16 +10,15 @@ Created on Wed Sep 25 00:38:16 2024
 from context import *
 
 print('------------ Testing Riccati Solver ------------')
-tracemalloc.start()
 process = psutil.Process()
 cpu_usage_before = psutil.cpu_percent(interval=None, percpu=True)
 start_time = time.time()
 #%%
-m = sio.mmread("data/pymess/NSE_RE_100_lvl1_M.mtx").tocsr()
-a = sio.mmread("data/pymess/NSE_RE_100_lvl1_A.mtx").tocsr()
-g = sio.mmread("data/pymess/NSE_RE_100_lvl1_G.mtx").tocsr()
-b = sio.mmread("data/pymess/NSE_RE_100_lvl1_B.mtx")
-c = sio.mmread("data/pymess/NSE_RE_100_lvl1_C.mtx")
+m = sio.mmread("data/mess/NSE_RE_100_lvl1_M.mtx").tocsr()
+a = sio.mmread("data/mess/NSE_RE_100_lvl1_A.mtx").tocsr()
+g = sio.mmread("data/mess/NSE_RE_100_lvl1_G.mtx").tocsr()
+b = sio.mmread("data/mess/NSE_RE_100_lvl1_B.mtx")
+c = sio.mmread("data/mess/NSE_RE_100_lvl1_C.mtx")
 
 ssmodel = {'A': a, 'B': b, 'C': c, 'M': m, 'G': g}
 solver = GRiccatiDAE2Solver(ssmodel)
@@ -47,11 +46,7 @@ print("it = %d \t rel_res2 = %e\t res2 = %e \n" % (it, res2 / res2_0, res2))
 elapsed_time = time.time() - start_time
 cpu_usage_after = psutil.cpu_percent(interval=None, percpu=True)
 cpu_usage_diff = [after - before for before, after in zip(cpu_usage_before, cpu_usage_after)]
-current, peak = tracemalloc.get_traced_memory()
-tracemalloc.stop()
 print('Elapsed Time = %e' % (elapsed_time))
-print(f"Current memory usage: {current / (1024 * 1024):.2f} MB")
-print(f"Peak memory usage: {peak / (1024 * 1024):.2f} MB")
 print(f"Average CPU usage: {round(np.average(cpu_usage_diff),2)}")
 cores_used = sum(1 for usage in cpu_usage_diff if usage > 0)
 print(f"Number of CPU cores actively used: {cores_used}")
