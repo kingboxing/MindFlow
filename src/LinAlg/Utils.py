@@ -227,22 +227,11 @@ def eigen_decompose(A, M=None, k=3, sigma=0.0, solver_params=None):
     vecs : numpy array
         Eigenvectors.
     """
+    # Default parameters for eigenvalue solver
+    from ..Params.Params import DefaultParameters
+    default_params = DefaultParameters().parameters['eigen_decompose']
     if solver_params is None:
         solver_params = {}
-
-    # Default parameters for eigenvalue solver
-    default_params = {
-        'method': 'lu',
-        'lusolver': 'mumps',
-        'echo': False,
-        'which': 'LM',
-        'v0': None,
-        'ncv': None,
-        'maxiter': None,
-        'tol': 0,
-        'return_eigenvectors': True,
-        'OPpart': None
-    }
 
     # Update default parameters with user-provided ones
     solver_params = {**default_params, **solver_params}
@@ -410,7 +399,7 @@ def rmse(predictions, targets):
     return np.sqrt(((predictions - targets) ** 2).mean())
 
 
-def update_dict_in_depth(original, updates):
+def dict_deep_update(original, updates):
     """
     Recursively update the original dictionary with the updates dictionary.
 
@@ -422,19 +411,16 @@ def update_dict_in_depth(original, updates):
     dict: The updated dictionary.
     """
     for key, value in updates.items():
-        if isinstance(value, dict) and key in original:
+        if isinstance(value, dict) and key in original and isinstance(original[key], dict):
             # If both the original and update value are dicts, recurse into the dicts
-            if isinstance(original[key], dict):
-                update_dict_in_depth(original[key], value)
-            else:
-                original[key] = value
+            dict_deep_update(original[key], value)
         else:
             # Otherwise, simply update/overwrite the value
             original[key] = value
     return original
 
 
-def set_attr_in_depth(obj, attr):
+def deep_set_attr(obj, attr):
     """
     Recursively set attributes on an object based on a nested dictionary.
 
@@ -449,7 +435,7 @@ def set_attr_in_depth(obj, attr):
             if nested_obj is None:
                 nested_obj = type('DynamicObject', (object,), {})()  # Create a new dynamic object if None
                 setattr(obj, key, nested_obj)
-            set_attr_in_depth(nested_obj, value)
+            deep_set_attr(nested_obj, value)
         else:
             # Set the attribute directly if the value is not a dictionary
             setattr(obj, key, value)

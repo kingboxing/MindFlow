@@ -42,20 +42,7 @@ class ResolventAnalysis(FreqencySolverBase):
         """
 
         super().__init__(mesh, Re, order, dim, constrained_domain)
-        self.param['solver_type'] = 'resolvent_solver'
-        # see scipy.sparse.linalg.eigs for details of parameters
-        self.param['resolvent_solver'] = {'method': 'lu',
-                                          'lusolver': 'mumps',
-                                          'symmetry': True,
-                                          'BCpart': None,
-                                          'echo': False,
-                                          'which': 'LM',
-                                          'v0': None,
-                                          'ncv': None,
-                                          'maxiter': None,
-                                          'tol': 0,
-                                          'return_eigenvectors': True,
-                                          'OPpart': None}
+        self.param = self.param['resolvent_solver']
 
     def _initialize_solver(self, bound=None):
         """

@@ -12,11 +12,10 @@ for index-2 systems using the M.E.S.S. library.
 """
 
 from ..Deps import *
-from joblib import Parallel, delayed
 
 from ..OptimControl.SystemModel import StateSpaceDAE2
-from ..LinAlg.Utils import distribute_numbers, update_dict_in_depth, set_attr_in_depth
-
+from ..LinAlg.Utils import distribute_numbers, dict_deep_update, deep_set_attr
+from ..Params.Params import DefaultParameters
 
 class GRiccatiDAE2Solver:
     """
@@ -54,37 +53,17 @@ class GRiccatiDAE2Solver:
 
         """
         self.Model = ssmodel
-        self.param = {
-            'solver_type': 'riccati_solver',
-            'mess_options': mess.Options(),
-            'riccati_solver': {}
-        }
-        self._default_param()
+        self._apply_default_param()
         self.facZ = None
         self.status = None
 
-    def _default_param(self):
+    def _apply_default_param(self):
         """
         Set default parameters for the Riccati solver.
         """
-        param_adi = {'memory_usage': mess.MESS_MEMORY_HIGH,
-                     'paratype': mess.MESS_LRCFADI_PARA_ADAPTIVE_V,
-                     'output': 0,
-                     'res2_tol': 1e-8,
-                     'maxit': 2000
-                     }
-        param_nm = {'output': 1,
-                    'singleshifts': 0,
-                    'linesearch': 1,
-                    'res2_tol': 1e-5,
-                    'maxit': 30,
-                    'k0': None  #Initial Feedback
-                    }
-        param_default = {'type': mess.MESS_OP_NONE,
-                         'lusolver': mess.MESS_DIRECT_UMFPACK_LU,
-                         'adi': param_adi,
-                         'nm': param_nm
-                         }
+        self.param = DefaultParameters().parameters['riccati_pymess']
+        self.param['mess_options'] = mess.Options()
+        param_default = self.param['riccati_solver']
         self.update_riccati_params(param_default)
 
     def update_riccati_params(self, param):
@@ -96,10 +75,10 @@ class GRiccatiDAE2Solver:
         param : dict
             A dictionary containing solver parameters to update.
         """
-        self.param['riccati_solver'] = update_dict_in_depth(self.param['riccati_solver'], param)
+        self.param['riccati_solver'] = dict_deep_update(self.param['riccati_solver'], param)
         if 'lusolver' in param:
             mess.direct_select(param.pop('lusolver'))
-        set_attr_in_depth(self.param['mess_options'], param)
+        deep_set_attr(self.param['mess_options'], param)
 
     def _assign_model(self, ssmodel):
         """
@@ -209,7 +188,7 @@ class GRiccatiDAE2Solver:
                     h2norms[proc] = sub_h2norm
 
             # Parallel computation of H2 norm
-            Parallel(n_jobs=pid, require='sharedmem')(delayed(h2norm_parallel)(proc) for proc in range(pid))
+            jb.Parallel(n_jobs=pid, require='sharedmem')(jb.delayed(h2norm_parallel)(proc) for proc in range(pid))
             return np.sum(h2norms)
 
     def normvec_T(self, K):

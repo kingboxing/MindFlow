@@ -15,7 +15,7 @@
       <sourceFolder url="file://$MODULE_DIR$/src/PrePost" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/tests" isTestSource="true" />
     </content>
-    <orderEntry type="jdk" jdkName="Remote Python 3.8.6 Docker (ferepack:v3)" jdkType="Python SDK" />
+    <orderEntry type="jdk" jdkName="Remote Python 3.10.12 Docker (ferepack/dev:v3)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
   </component>
   <component name="PyDocumentationSettings">

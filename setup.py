@@ -7,7 +7,17 @@ setup(
     package_dir={'': 'src'},  # Define 'src' as the root directory for modules
     include_package_data=True,
     install_requires=[
+        'python>=3.9.0'
         'FEniCS==2019.1.0',
+        'scipy',
+        'numpy',
+        'matplotlib',
+        'scikit-sparse',
+        'scikit-umfpack',
+        'pymess',
+        'matlabengine'
+        'psutil',
+        'joblib',
         # List your dependencies here (e.g., fenics, numpy)
     ],
     description='FERePack: FEniCS-based package for frequency-based analysis and control problems.',

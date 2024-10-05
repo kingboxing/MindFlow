@@ -29,7 +29,7 @@ solver.solve_riccati()
 # solve equation
 z = solver.facZ
 
-matq =cholesky(m.tocsc(), ordering_method="natural").L().transpose()
+matq = cholesky(m.tocsc(), ordering_method="natural").L().transpose()
 status = solver.status
 h2norm = solver.squared_h2norm(matq)
 h2norm_pa = solver.squared_h2norm(matq, chunk_size = 500)

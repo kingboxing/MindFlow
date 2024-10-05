@@ -16,7 +16,7 @@ from ..Deps import *
 from ..FreqAnalys.FreqSolverBase import FreqencySolverBase
 from ..LinAlg.MatrixAsm import IdentMatBC, MatP, IdentMatProl
 from ..LinAlg.Utils import del_zero_cols, eigen_decompose, convert_to_2d
-
+from ..Params.Params import DefaultParameters
 
 class StateSpaceDAE2(FreqencySolverBase):
     """
@@ -50,8 +50,7 @@ class StateSpaceDAE2(FreqencySolverBase):
         """
         super().__init__(mesh, Re, order, dim, constrained_domain)
         self.SSModel = {}
-        self.param['solver_type']='state_space_model'
-        self.param['state_space_model']={}
+        self.param = DefaultParameters().parameters['state_space_model']
         
     def _initialize_prolmat(self):
         """

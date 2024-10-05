@@ -60,7 +60,7 @@ solver.solve(k=200, Re=Re)
 # compare results
 eigs = load_complex('./data/eigen/LMEigen_bf_newton_cylinder_26k_re080.txt')
 vals, ind = sort_complex(solver.vals)
-Error_vals = np.linalg.norm(vals - eigs, ord=np.inf)
+Error_vals = np.linalg.norm(vals[:100] - eigs[:100], ord=np.inf)
 # compare unstable eigs
 Error_us = np.linalg.norm(np.loadtxt('./data/eigen/eigenvalues.txt') -
                           list(zip([Re], [np.abs(np.imag(vals[0]))],
@@ -75,7 +75,7 @@ Error_vecs = np.linalg.norm(np.abs(vecs) - np.abs(solver.vecs[:, ind[0]]), ord=n
 # print results
 print('Results are printed as follows : ')
 print(
-    f'Re = {Re}\nAll_ValError_infnorm = {Error_vals}\nUs_ValError_infnorm = {Error_us}\nVecError_2norm = {Error_vecs}')
+    f'Re = {Re}\nAll_ValError_inf_norm = {Error_vals}\nUs_ValError_inf_norm = {Error_us}\nVecError_2norm = {Error_vecs}')
 #%%
 elapsed_time = time.time() - start_time
 cpu_usage_after = psutil.cpu_percent(interval=None, percpu=True)

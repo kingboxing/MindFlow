@@ -13,7 +13,7 @@ using a generalized algebraic Bernoulli equation and eigen-decomposition techniq
 from ..Deps import *
 from ..LinAlg.Utils import eigen_decompose, sort_complex
 from ..OptimControl.SystemModel import StateSpaceDAE2
-
+from ..Params.Params import DefaultParameters
 
 class BernoulliFeedback:
     """
@@ -32,20 +32,7 @@ class BernoulliFeedback:
             optionally other components of the state-space model.
         """
         self._assign_model(ssmodel)
-        self.param = {}
-        self.param['solver_type'] = 'bernoulli_feedback'
-        self.param['bernoulli_feedback'] = {'method': 'lu',
-                                            'lusolver': 'mumps',
-                                            'echo': False,
-                                            'k': 2,
-                                            'sigma': 0.0,
-                                            'which': 'LR',  #compute unstable eigenvalues
-                                            'v0': None,
-                                            'ncv': None,
-                                            'maxiter': None,
-                                            'tol': 0,
-                                            'return_eigenvectors': True,
-                                            'OPpart': None}
+        self.param = DefaultParameters().parameters['bernoulli_feedback']
 
     def _assign_model(self, ssmodel):
         """

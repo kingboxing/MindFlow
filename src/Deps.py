@@ -16,22 +16,37 @@ import copy
 import gc
 import multiprocessing
 from petsc4py import PETSc
-import matplotlib.pyplot as plt
+import joblib as jb
+
+try:
+    import matplotlib.pyplot as plt
+    has_mpl = True
+except ImportError:
+    has_mpl = False
 
 try:
     from scikits import umfpack
+    has_umfpack = True
 except ImportError:
-    PyUMFPACK = False
+    has_umfpack = False
 
 try:
     from sksparse.cholmod import cholesky
+    has_cholesky = True
 except ImportError:
-    CHOLESKY = False
+    has_cholesky = False
 
 try:
     import pymess as mess
+    has_pymess = True
 except ImportError:
-    MESS = False
+    has_pymess = False
+
+try:
+    import matlab.engine
+    has_matlab = True
+except ImportError:
+    has_matlab = False
 
 parameters["std_out_all_processes"] = False
 comm_mpi4py = MPI.comm_world

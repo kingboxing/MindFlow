@@ -61,8 +61,6 @@ elapsed_time = time.time() - start_time
 cpu_usage_after = psutil.cpu_percent(interval=None, percpu=True)
 cpu_usage_diff = [after - before for before, after in zip(cpu_usage_before, cpu_usage_after)]
 print('Elapsed Time = %e' % (elapsed_time))
-print(f"Current memory usage: {current / (1024 * 1024):.2f} MB")
-print(f"Peak memory usage: {peak / (1024 * 1024):.2f} MB")
 print(f"Average CPU usage: {round(np.average(cpu_usage_diff), 2)}")
 cores_used = sum(1 for usage in cpu_usage_diff if usage > 0)
 print(f"Number of CPU cores actively used: {cores_used}")

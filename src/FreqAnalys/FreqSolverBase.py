@@ -14,7 +14,7 @@ from ..BasicFunc.Boundary import SetBoundary, SetBoundaryCondition
 from ..BasicFunc.InitialCondition import SetInitialCondition
 from ..LinAlg.MatrixOps import AssembleMatrix, AssembleVector, ConvertVector, ConvertMatrix, AssembleSystem, \
     TransposePETScMat, InverseMatrixOperator, SparseLUSolver
-
+from ..Params.Params import DefaultParameters
 
 #%%
 class FreqencySolverBase(NSolverBase):
@@ -43,7 +43,7 @@ class FreqencySolverBase(NSolverBase):
         # boundary condition
         self.boundary_condition = SetBoundaryCondition(self.element.functionspace, self.boundary)
         # init param
-        self.param = {}
+        self.param = DefaultParameters().parameters
 
     def set_baseflow(self, ic, timestamp=0.0):
         """

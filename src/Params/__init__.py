@@ -1,1 +1,3 @@
-# includes sparse/dense matrices, linear solver/operators, preconditioners 
+# include default parameters
+
+from .Params import DefaultParameters

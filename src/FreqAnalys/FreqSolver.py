@@ -42,10 +42,7 @@ class FrequencyResponse(FreqencySolverBase):
             Constrained domain defined in FEniCS (e.g., for periodic boundary conditions). Default is None.
         """
         super().__init__(mesh, Re, order, dim, constrained_domain)
-        self.param['solver_type'] = 'frequency_response'
-        self.param['frequency_response'] = {'method': 'lu',
-                                            'lusolver': 'mumps',
-                                            'echo': False}
+        self.param = self.param['frequency_response']
 
     def _initialize_solver(self):
         """

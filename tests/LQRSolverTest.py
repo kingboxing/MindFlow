@@ -21,11 +21,11 @@ process = psutil.Process()
 cpu_usage_before = psutil.cpu_percent(interval=None, percpu=True)
 start_time = time.time()
 #%%
-m = sio.mmread("data/pymess/NSE_RE_100_lvl1_M.mtx").tocsr()
-a = sio.mmread("data/pymess/NSE_RE_100_lvl1_A.mtx").tocsr()
-g = sio.mmread("data/pymess/NSE_RE_100_lvl1_G.mtx").tocsr()
-b = sio.mmread("data/pymess/NSE_RE_100_lvl1_B.mtx")
-c = sio.mmread("data/pymess/NSE_RE_100_lvl1_C.mtx")
+m = sio.mmread("data/mess/NSE_RE_100_lvl1_M.mtx").tocsr()
+a = sio.mmread("data/mess/NSE_RE_100_lvl1_A.mtx").tocsr()
+g = sio.mmread("data/mess/NSE_RE_100_lvl1_G.mtx").tocsr()
+b = sio.mmread("data/mess/NSE_RE_100_lvl1_B.mtx")
+c = sio.mmread("data/mess/NSE_RE_100_lvl1_C.mtx")
 
 ssmodel = {'A': a, 'B': b, 'C': c, 'M': m, 'G': g}
 

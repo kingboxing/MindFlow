@@ -15,7 +15,7 @@ from ..Deps import *
 from ..OptimControl.RiccatiSolver import GRiccatiDAE2Solver
 from ..OptimControl.BernoulliSolver import BernoulliFeedback
 from ..LinAlg.Utils import distribute_numbers
-
+from ..Params.Params import DefaultParameters
 
 class LQESolver(GRiccatiDAE2Solver):
     """
@@ -31,13 +31,19 @@ class LQESolver(GRiccatiDAE2Solver):
         ssmodel : dict or StateSpaceDAE2
             State-space model or dictionary containing the system matrices.
         """
-
-        super().__init__(self._initialise_model(ssmodel))
         self._k0 = BernoulliFeedback(ssmodel)
-        self.param['solver_type'] = 'lqe_solver'
-        self.param['initial_feedback'] = self._k0.param
-        self._default_param()
+        super().__init__(self._initialise_model(ssmodel))
         self.sensor_noise(alpha=1)  # initialise Key 'C_pen_mat' in ssmodel
+
+    def _apply_default_param(self):
+        """
+        Initialize default parameters for the LQE solver.
+        """
+        self.param = DefaultParameters().parameters['lqe_pymess']
+        self.param['mess_options'] = mess.Options()
+        self.param['initial_feedback'] = self._k0.param
+        param_default = self.param['riccati_solver']
+        self.update_riccati_params(param_default)
 
     def _initialise_model(self, ssmodel):
         """
@@ -60,30 +66,6 @@ class LQESolver(GRiccatiDAE2Solver):
                  'B': ssmodel['B'],
                  'C': ssmodel['C']}
         return model
-
-    def _default_param(self):
-        """
-        Initialize default parameters for the LQE solver.
-        """
-        param_adi = {'memory_usage': mess.MESS_MEMORY_HIGH,
-                     'paratype': mess.MESS_LRCFADI_PARA_ADAPTIVE_V,
-                     'output': 0,
-                     'res2_tol': 1e-8,
-                     'maxit': 2000
-                     }
-        param_nm = {'output': 1,
-                    'singleshifts': 0,
-                    'linesearch': 1,
-                    'res2_tol': 1e-5,
-                    'maxit': 30,
-                    'k0': None  #Initial Feedback
-                    }
-        param_default = {'type': mess.MESS_OP_NONE,
-                         'lusolver': mess.MESS_DIRECT_UMFPACK_LU,
-                         'adi': param_adi,
-                         'nm': param_nm
-                         }
-        self.update_riccati_params(param_default)
 
     def init_feedback(self):
         """

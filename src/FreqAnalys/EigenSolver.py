@@ -43,32 +43,7 @@ class EigenAnalysis(FreqencySolverBase):
 
         """
         super().__init__(mesh, Re, order, dim, constrained_domain)
-        self.param['solver_type'] = 'eigen_solver'
-        # see scipy.sparse.linalg.eigs for details of parameters
-        """
-        symmetry : bool, optional
-            whether assemble matrices in the symmetry way. Default is True.
-        solve_type : str, optional
-            Solver type ('implicit' or 'explicit'). Default is 'implicit'.
-        inverse : bool, optional
-            Whether to compute the inverse of the RHS eigenvectors. Default is False.
-        BCpart : ‘r’ or ‘i’/None, optional
-            The homogenous boundary conditions are applied in the real (matrix NS) or imag (matrix M) part of system. The default is None.
-        """
-        self.param['eigen_solver'] = {'method': 'lu',
-                                      'lusolver': 'mumps',
-                                      'symmetry': True,
-                                      'solve_type': 'implicit',
-                                      'inverse': False,
-                                      'BCpart': None,
-                                      'echo': False,
-                                      'which': 'LM',
-                                      'v0': None,
-                                      'ncv': None,
-                                      'maxiter': None,
-                                      'tol': 0,
-                                      'return_eigenvectors': True,
-                                      'OPpart': None}
+        self.param = self.param['eigen_solver']
 
     def _initialize_solver(self, sigma, inverse):
         """
