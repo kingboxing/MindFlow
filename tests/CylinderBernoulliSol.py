@@ -52,7 +52,7 @@ output_vec = vec_gen.point_vector((3.0, 0.0), 1)
 
 # assemble model
 model.assemble_model(input_vec=input_vec, output_vec=output_vec, Re=Re)
-InitFeedback = BernoulliFeedback(model.SSModel)
+InitFeedback = BernoulliFeedback(model.model)
 transpose = True  # False for LQR, True for LQE
 k0 = InitFeedback.solve(transpose=transpose)
 

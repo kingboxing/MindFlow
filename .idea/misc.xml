@@ -4,4 +4,7 @@
     <option name="sdkName" value="Remote Python 3.8.6 Docker (ferepack:v1)" />
   </component>
   <component name="ProjectRootManager" version="2" project-jdk-name="Remote Python 3.10.12 Docker (ferepack/dev:v3)" project-jdk-type="Python SDK" />
+  <component name="PythonCompatibilityInspectionAdvertiser">
+    <option name="version" value="3" />
+  </component>
 </project>

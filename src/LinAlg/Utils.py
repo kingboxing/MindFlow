@@ -8,6 +8,7 @@ Created on Wed Aug 28 18:48:11 2024
 from ..Deps import *
 from ..LinAlg.MatrixOps import InverseMatrixOperator
 
+
 def assign2(receiving_func, assigning_func):
     """
     Assigns a NumPy array or another FEniCS function to a target FEniCS function.
@@ -31,7 +32,7 @@ def assign2(receiving_func, assigning_func):
             raise ValueError(f"Size mismatch: FEniCS function has {receiving_func.vector().size()} DOFs, "
                              f"but the NumPy array has {assigning_func.size} elements.")
         # Assign the NumPy array values to the FEniCS function
-        receiving_func.vector()[:]=np.ascontiguousarray(assigning_func)
+        receiving_func.vector()[:] = np.ascontiguousarray(assigning_func)
     elif isinstance(assigning_func, function.function.Function):
         # Check if the function spaces match
         if assigning_func.function_space() != receiving_func.function_space():
@@ -39,6 +40,7 @@ def assign2(receiving_func, assigning_func):
         receiving_func.assign(assigning_func)
     else:
         raise ValueError("Unsupported source type. Must be a NumPy array or a FEniCS function.")
+
 
 def allclose_spmat(A, B, tol=1e-12):
     """
@@ -85,13 +87,14 @@ def get_subspace_info(function_space):
     for i in range(num_sub_spaces):
         num_space = function_space.sub(i).num_sub_spaces()
         if num_space == 0:
-            sub_spaces += (1, )
+            sub_spaces += (1,)
             #total_scalar_subspaces += 1
         else:
-            sub_spaces += (num_space, )
+            sub_spaces += (num_space,)
             #total_scalar_subspaces += num_space
-    
+
     return sub_spaces
+
 
 def find_subspace_index(index, sub_spaces):
     """
@@ -118,20 +121,21 @@ def find_subspace_index(index, sub_spaces):
 
     """
     cumulative_sum = 0
-    
+
     for i, num_scalar_subspaces in enumerate(sub_spaces):
         previous_sum = cumulative_sum
         cumulative_sum += num_scalar_subspaces
         if index < cumulative_sum:
             top_level_index = i
             sub_level_index = index - previous_sum
-            if sub_spaces[top_level_index]>1:
+            if sub_spaces[top_level_index] > 1:
                 return (top_level_index, sub_level_index)
-            else: # the number of scalar subspaces in a top-level subspace = 1
-                return (top_level_index, )
-                
+            else:  # the number of scalar subspaces in a top-level subspace = 1
+                return (top_level_index,)
+
     raise ValueError("Index out of bounds")
-    
+
+
 def is_symmetric(m):
     """Check if a sparse matrix is symmetric
 
@@ -192,6 +196,7 @@ def del_zero_cols(mat):
 
     """
     return mat[:, mat.nonzero()[1]]
+
 
 def eigen_decompose(A, M=None, k=3, sigma=0.0, solver_params=None):
     """
@@ -254,7 +259,8 @@ def eigen_decompose(A, M=None, k=3, sigma=0.0, solver_params=None):
                      v0=solver_params['v0'], ncv=solver_params['ncv'], maxiter=solver_params['maxiter'],
                      tol=solver_params['tol'], return_eigenvectors=solver_params['return_eigenvectors'],
                      OPpart=solver_params['OPpart'])
-    
+
+
 def sort_complex(a, tol=1e-8):
     """
     Sort a complex array based on the real part, then the imaginary part.
@@ -272,15 +278,15 @@ def sort_complex(a, tol=1e-8):
         Indices that sort the original array in descending order.
     """
     # Get the indices that would sort the array based on real part and then imaginary part
-    atol= np.round(a.real, int(np.abs(np.log10(tol)))) + 1j* a.imag
+    atol = np.round(a.real, int(np.abs(np.log10(tol)))) + 1j * a.imag
     index_sort = np.lexsort((atol.imag, atol.real))[::-1]  # Reverse for descending order
-    
+
     # Use the sorted indices to get the sorted array
     sorted_array = a[index_sort]
-    
+
     return sorted_array, index_sort
-    
-    
+
+
 def distribute_numbers(n, k):
     """
     Distribute n numbers into k groups as evenly as possible.
@@ -297,14 +303,15 @@ def distribute_numbers(n, k):
     """
     # Base size of each group
     base_size = n // k
-    
+
     # Number of groups that will get an extra element
     remainder = n % k
-    
+
     # Create the distribution list
     distribution = [base_size + 1 if i < remainder else base_size for i in range(k)]
-    
+
     return distribution
+
 
 def convert_to_2d(arr, axis=0):
     """
@@ -320,11 +327,12 @@ def convert_to_2d(arr, axis=0):
         A 2D version of the input array.
     """
     arr = np.asarray(arr)  # Ensure input is a NumPy array
-    
+
     if arr.ndim == 1:  # Check if the array is 1D
         arr = np.expand_dims(arr, axis=axis)  # Convert to 2D (row vector)
-    
+
     return arr
+
 
 def save_complex(complex_list, filename):
     """
@@ -340,7 +348,8 @@ def save_complex(complex_list, filename):
         for num in complex_list:
             # Write real and imaginary parts separately
             file.write(f"{num.real} {num.imag}\n")
-            
+
+
 def load_complex(filename):
     """
     Load a list of complex numbers from a text file.
@@ -359,6 +368,7 @@ def load_complex(filename):
             real, imag = map(float, line.split())
             complex_list.append(complex(real, imag))
     return complex_list
+
 
 def plot_spmat(sparse_matrix):
     """
@@ -380,7 +390,8 @@ def plot_spmat(sparse_matrix):
     plt.gca().invert_yaxis()  # Invert y-axis to match matrix layout
     plt.gca().set_aspect('equal', adjustable='box')  # Set aspect ratio to 1:1
     plt.show()
-    
+
+
 def rmse(predictions, targets):
     """
     Root-mean-square deviation between two arrays
@@ -439,3 +450,62 @@ def deep_set_attr(obj, attr):
         else:
             # Set the attribute directly if the value is not a dictionary
             setattr(obj, key, value)
+
+
+def assemble_sparse(blocks):
+    """
+    Assemble a sparse matrix from a list of block matrices.
+
+    Parameters:
+    - blocks: A 2D list of block matrices (either sparse or dense).
+              Each row in the list represents a row of block matrices.
+              Use None for empty blocks.
+
+    Returns:
+    - A single assembled sparse matrix.
+    """
+    # Convert any dense NumPy arrays in the blocks to sparse format
+    sparse_blocks = [[sp.csr_matrix(block) if block is not None and not sp.issparse(block) else block
+                      for block in row]
+                     for row in blocks]
+    # Use bmat to assemble the sparse matrix from blocks
+    A = sp.bmat(sparse_blocks).tocsr()
+    A.eliminate_zeros()
+    A.sort_indices()  # sort data indices, prevent unmfpack error -8
+    return A
+
+
+def assemble_dae2(model):
+    """
+    Assemble state-space matrices from block matrices for a DAE2 system.
+
+    Mass = E_full = | M   0 |      State = A_full = | A   G  |
+                    | 0   0 |                       | G.T Z=0|
+
+    Parameters:
+    - model: A dictionary containing the following keys:
+      - 'A': The system matrix.
+      - 'G': The coupling matrix.
+      - 'M': The mass matrix.
+
+    Returns:
+    - A tuple (A_full, E_full) where:
+      - A_full: The assembled state matrix.
+      - E_full: The assembled mass matrix.
+    """
+    # Get the dimensions of G
+    n = model['G'].shape[1]
+
+    # Assemble the state matrix A_full using the blocks [A, G] and [G.T, None]
+    A_full = assemble_sparse([
+        [model['A'], model['G']],
+        [model['G'].T, None]
+    ])
+
+    # Assemble the mass matrix E_full using the blocks [M, None] and [None, zeros(n, n)]
+    E_full = assemble_sparse([
+        [model['M'], None],
+        [None, sp.csr_matrix((n, n))]  # Zeros block
+    ])
+
+    return A_full, E_full

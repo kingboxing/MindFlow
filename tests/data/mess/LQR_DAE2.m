@@ -77,7 +77,7 @@ opts.norm = 2;
 opts.adi.maxiter       = 300;
 opts.adi.res_tol       = 1e-12;
 opts.adi.rel_diff_tol  = 1e-16;
-opts.adi.info          = 0;
+opts.adi.info          = 1;
 opts.adi.LDL_T         = false;
 eqn.type = 'T';
 
@@ -94,7 +94,7 @@ opts.shifts.b0          = ones(n, 1);
 opts.nm.maxiter          = 20;
 opts.nm.res_tol          = 1e-10;
 opts.nm.rel_diff_tol     = 1e-16;
-opts.nm.info             = 0;
+opts.nm.info             = 1;
 opts.nm.projection.freq  = 0;
 opts.nm.projection.ortho = true;
 % in case you want to e.g. specify the factored Newton solver for
@@ -109,20 +109,20 @@ opts.nm.tau              = 0.1;
 opts.nm.accumulateRes    = true;
 
 %% use low-rank Newton-Kleinman-ADI
-% t_mess_lrnm = tic;
-% outnm = mess_lrnm(eqn, opts, oper);
-% t_elapsed1 = toc(t_mess_lrnm);
-% mess_fprintf(opts, 'mess_lrnm took %6.2f seconds \n\n', t_elapsed1);
-% if not(istest)
-%     figure(1);
-%     semilogy(outnm.res, 'LineWidth', 3);
-%     title('0 = C^T C + A^T X E + E^T X A - E^T X BB^T X E');
-%     xlabel('number of newton iterations');
-%     ylabel('normalized residual norm');
-%     pause(1);
-% end
-% [mZ, nZ] = size(outnm.Z);
-% mess_fprintf(opts, 'size outnm.Z: %d x %d\n\n', mZ, nZ);
+t_mess_lrnm = tic;
+outnm = mess_lrnm(eqn, opts, oper);
+t_elapsed1 = toc(t_mess_lrnm);
+mess_fprintf(opts, 'mess_lrnm took %6.2f seconds \n\n', t_elapsed1);
+if not(istest)
+    figure(1);
+    semilogy(outnm.res, 'LineWidth', 3);
+    title('0 = C^T C + A^T X E + E^T X A - E^T X BB^T X E');
+    xlabel('number of newton iterations');
+    ylabel('normalized residual norm');
+    pause(1);
+end
+[mZ, nZ] = size(outnm.Z);
+mess_fprintf(opts, 'size outnm.Z: %d x %d\n\n', mZ, nZ);
 
 %% Lets try the RADI method and compare
 opts.norm               = 2;
@@ -144,7 +144,7 @@ opts.radi.get_ZZt             = false;
 opts.radi.maxiter             = opts.adi.maxiter;
 opts.radi.res_tol             = opts.nm.res_tol;
 opts.radi.rel_diff_tol        = 0;
-opts.radi.info                = 0;
+opts.radi.info                = 1;
 
 t_mess_lrradi = tic;
 outradi = mess_lrradi(eqn, opts, oper);
@@ -160,25 +160,25 @@ if not(istest)
 end
 
 %% compare
-% if istest
-%     if min(outnm.res) >= opts.nm.res_tol
-%         mess_err(opts, 'TEST:accuracy', ...
-%                  'unexpectedly inaccurate result');
-%     end
-%     if min(outradi.res) >= opts.radi.res_tol
-%         mess_err(opts, 'TEST:accuracy', ...
-%                  'unexpectedly inaccurate result');
-%     end
-% else
-%     figure();
-%     ls_nm = [outnm.adi.niter];
-%     ls_radi = 1:outradi.niter;
-% 
-%     semilogy(cumsum(ls_nm), outnm.res, 'k--', ...
-%              ls_radi, outradi.res, 'b-', ...
-%              'LineWidth', 3);
-%     title('0 = C^T C + A^T X E + E^T X A - E^T X BB^T X E');
-%     xlabel('number of solves with A+p*M');
-%     ylabel('normalized residual norm');
-%     legend('LR-NM', 'RADI');
+if istest
+    if min(outnm.res) >= opts.nm.res_tol
+        mess_err(opts, 'TEST:accuracy', ...
+                 'unexpectedly inaccurate result');
+    end
+    if min(outradi.res) >= opts.radi.res_tol
+        mess_err(opts, 'TEST:accuracy', ...
+                 'unexpectedly inaccurate result');
+    end
+else
+    figure();
+    ls_nm = [outnm.adi.niter];
+    ls_radi = 1:outradi.niter;
+
+    semilogy(cumsum(ls_nm), outnm.res, 'k--', ...
+             ls_radi, outradi.res, 'b-', ...
+             'LineWidth', 3);
+    title('0 = C^T C + A^T X E + E^T X A - E^T X BB^T X E');
+    xlabel('number of solves with A+p*M');
+    ylabel('normalized residual norm');
+    legend('LR-NM', 'RADI');
 end

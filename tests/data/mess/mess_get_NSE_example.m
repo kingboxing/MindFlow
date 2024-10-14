@@ -8,11 +8,15 @@ function [eqn, K0p, K0d] = mess_get_NSE(Re, level)
 % Inputs:
 %  Re      desired Reynolds number (300, 400, 500)
 %  level   desired refinement level (test on MacBookPro M3 14 cores)
-%            1 -> n =   3595 (velocity dim:  3142) time:7s      11s (octave)
-%            2 -> n =   9391 (velocity dim:  8268) time:29s     55s (octave)
-%            3 -> n =  22385 (velocity dim: 19770) time:92s     176s (octave)
-%            4 -> n =  50527 (velocity dim: 44744) time:404s    825s (octave)
-%            5 -> n = 110620 (velocity dim: 98054) time:922s    1573s (octave)
+%                                                       Re=500,
+%                                                       Eqn.type='T'
+%            1 -> n =   3595 (velocity dim:  3142) radi time:7s      11s (octave)
+%                                                   nm  time:99s
+%            2 -> n =   9391 (velocity dim:  8268) radi time:29s     55s (octave)
+%            3 -> n =  22385 (velocity dim: 19770) radi time:92s     176s (octave)
+%            4 -> n =  50527 (velocity dim: 44744) radi time:404s    825s (octave)
+%            5 -> n = 110620 (velocity dim: 98054) radi time:922s    1573s (octave)
+%                                                   nm  time:3.78hrs
 %
 % Output:
 %  eqn     equation structure for use with 'dae_2' usfs.

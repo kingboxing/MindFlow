@@ -11,9 +11,10 @@ using a generalized algebraic Bernoulli equation and eigen-decomposition techniq
 
 """
 from ..Deps import *
-from ..LinAlg.Utils import eigen_decompose, sort_complex
+from ..LinAlg.Utils import eigen_decompose, sort_complex, assemble_dae2, assemble_sparse
 from ..OptimControl.SystemModel import StateSpaceDAE2
 from ..Params.Params import DefaultParameters
+
 
 class BernoulliFeedback:
     """
@@ -21,26 +22,26 @@ class BernoulliFeedback:
     by solving a generalized Bernoulli equation.
     """
 
-    def __init__(self, ssmodel):
+    def __init__(self, model):
         """
         Initialize the BernoulliFeedback solver with the state-space model.
 
         Parameters
         ----------
-        ssmodel : dict
+        model : dict
             Dictionary containing the mass matrix 'Mass', the state matrix 'State', and
             optionally other components of the state-space model.
         """
-        self._assign_model(ssmodel)
+        self._assign_model(model)
         self.param = DefaultParameters().parameters['bernoulli_feedback']
 
-    def _assign_model(self, ssmodel):
+    def _assign_model(self, model):
         """
         Assign the state-space model.
 
         Parameters
         ----------
-        ssmodel : dict or StateSpaceDAE2
+        model : dict or StateSpaceDAE2
             State-space model.
 
         Raises
@@ -48,38 +49,36 @@ class BernoulliFeedback:
         TypeError
             If the input is not a valid state-space model.
         """
+        if isinstance(model, StateSpaceDAE2):
+            model = model.model
 
-        if isinstance(ssmodel, dict):
-            self.SSModel = ssmodel
-            if 'Mass' not in ssmodel or 'State' not in ssmodel:
+        if isinstance(model, dict):
+            self.model = model
+            if 'E_full' not in model or 'A_full' not in model:
                 self._assemble_statespace()
-        elif isinstance(ssmodel, StateSpaceDAE2):
-            self.SSModel = ssmodel.SSModel
+            else:
+                self.E_full = self.model['E_full']
+                self.A_full = self.model['A_full']
         else:
             raise TypeError('Invalid type for state-space model.')
 
-        self.Mass = self.SSModel['Mass']
-        self.State = self.SSModel['State']
+        # self.E_full = self.model['E_full']
+        # self.A_full = self.model['A_full']
 
     def _assemble_statespace(self):
         """
         Assemble state-space matrices from block matrices.
 
-        Mass = | M   0 |      State = | A   G  |
-               | 0   0 |              | GT  Z=0|
+        Mass = E_full = | M   0 |      State = A_full = | A   G  |
+                        | 0   0 |                       | GT  Z=0|
         """
         # assemble block matrix of mass and state matrices
-        N = self.SSModel['G'].shape[1]
-        Z = sp.csr_matrix((N, N))
-        Mass_b = sp.bmat([[self.SSModel['M'], None], [None, Z]], format='csr')
-        State_b = sp.bmat([[self.SSModel['A'], self.SSModel['G']], [self.SSModel['G'].T, None]],
-                          format='csr')
-        # Eliminate zeros for efficiency
-        Mass_b.eliminate_zeros()
-        State_b.eliminate_zeros()
+        n = self.model['G'].shape[1]
+        self.A_full = assemble_sparse([[self.model['A'], self.model['G']], [self.model['G'].T, None]])
+        self.E_full = assemble_sparse([[self.model['M'], None], [None, sp.csr_matrix((n, n))]])
 
         # Update state-space model with assembled matrices
-        self.SSModel.update({'Mass': Mass_b, 'State': State_b})
+        #self.model.update({'E_full': E_full, 'A_full': A_full})
 
     def _real_projection_basis(self, vals, vecs):
         """
@@ -117,9 +116,9 @@ class BernoulliFeedback:
             Real projection basis for the right eigenvectors.
         """
         param = self.param['bernoulli_feedback']
-        vals_r, vecs_r = eigen_decompose(self.State, M=self.Mass, k=param['k'], sigma=param['sigma'],
+        vals_r, vecs_r = eigen_decompose(self.A_full, M=self.E_full, k=param['k'], sigma=param['sigma'],
                                          solver_params=param)
-        vals_l, vecs_l = eigen_decompose(self.State.transpose(), M=self.Mass.transpose(), k=param['k'],
+        vals_l, vecs_l = eigen_decompose(self.A_full.transpose(), M=self.E_full.transpose(), k=param['k'],
                                          sigma=param['sigma'], solver_params=param)
 
         # Sort eigenvalues and eigenvectors
@@ -136,8 +135,8 @@ class BernoulliFeedback:
 
         # Form projection basis for unstable eigenvalues
         ind_us = np.real(vals_rs) > 0  # indices of unstable eigenvalues
-        HL = self._real_projection_basis(vals_ls[ind_us], vecs_ls[:, ind_us])  #left
-        HR = self._real_projection_basis(vals_rs[ind_us], vecs_rs[:, ind_us])  #right
+        HL = self._real_projection_basis(vals_ls[ind_us], vecs_ls[:, ind_us])  # left
+        HR = self._real_projection_basis(vals_rs[ind_us], vecs_rs[:, ind_us])  # right
 
         return HL, HR
 
@@ -156,30 +155,31 @@ class BernoulliFeedback:
             Feedback vector of shape (n, k).
         """
         if not transpose:
-            B = self.SSModel['B']
+            B = self.model['B']
         else:
-            B = self.SSModel['C'].T
+            B = self.model['C'].T
 
         HL, HR = self._bi_eigen_decompose()
 
         # Compute reduced system matrices
-        M_tilda = HL.T.conj() @ self.Mass @ HR
-        A_tilda = HL.T.conj() @ self.State @ HR
-        B_tilda = HL.T.conj() @ np.pad(B, ((0, self.Mass.shape[0] - B.shape[0]), (0, 0)), 'constant', constant_values=0)
+        M_tilda = HL.T.conj() @ self.E_full @ HR
+        A_tilda = HL.T.conj() @ self.A_full @ HR
+        B_tilda = HL.T.conj() @ np.pad(B, ((0, self.E_full.shape[0] - B.shape[0]), (0, 0)), 'constant',
+                                       constant_values=0)
 
         if transpose:  # LQE problem
             M_tilda = M_tilda.T
             A_tilda = A_tilda.T
-            B_tilda = HR.T.conj() @ np.pad(B, ((0, self.Mass.shape[0] - B.shape[0]), (0, 0)), 'constant',
+            B_tilda = HR.T.conj() @ np.pad(B, ((0, self.E_full.shape[0] - B.shape[0]), (0, 0)), 'constant',
                                            constant_values=0)
 
         Xare = sla.solve_continuous_are(A_tilda, B_tilda, np.zeros_like(A_tilda), np.identity(B_tilda.shape[1]),
                                         e=M_tilda, s=None, balanced=True)
 
         if transpose:  # LQE problem
-            return self.Mass.T @ HR @ Xare @ B_tilda
+            return self.E_full.T @ HR @ Xare @ B_tilda
 
-        return self.Mass @ HL @ Xare @ B_tilda
+        return self.E_full @ HL @ Xare @ B_tilda
 
     def solve(self, transpose=False):
         """
@@ -198,9 +198,9 @@ class BernoulliFeedback:
         feedback = self._bernoulli_solver(transpose)
         info('Bernoulli Feedback Solver Finished.')
         if transpose:
-            return feedback[:self.SSModel['C'].shape[1], :].T
+            return feedback[:self.model['C'].shape[1], :].T
 
-        return feedback[:self.SSModel['B'].shape[0], :].T
+        return feedback[:self.model['B'].shape[0], :].T
 
     def validate_eigs(self, k0, k=3, sigma=0.0, param=None, transpose=False):
         """
@@ -223,13 +223,13 @@ class BernoulliFeedback:
             param = {}
         # Set up matrices
         if not transpose:
-            M = self.Mass
-            A = self.State
-            BC = self.SSModel['B']
+            M = self.E_full
+            A = self.A_full
+            BC = self.model['B']
         else:
-            M = self.Mass.T
-            A = self.State.T
-            BC = self.SSModel['C'].T
+            M = self.E_full.T
+            A = self.A_full.T
+            BC = self.model['C'].T
 
         if k0 is not None:
             B_sp = sp.csr_matrix(np.pad(BC, ((0, M.shape[0] - BC.shape[0]), (0, 0)), 'constant', constant_values=0))

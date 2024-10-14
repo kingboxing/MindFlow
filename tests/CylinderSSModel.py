@@ -63,10 +63,10 @@ vecs = element.w.vector().get_local()
 data.retrieve(element.w.vector(), 1.0)
 vecs = vecs + element.w.vector().get_local() * 1j
 # 
-P_nbc = model.SSModel['Prol'][0]
-P_nvel_bc = model.SSModel['Prol'][1]
-P_npre_bc = model.SSModel['Prol'][2]
-vecs = np.bmat([P_npre_bc.transpose() @ (P_nbc.transpose() @ vecs), P_nvel_bc.transpose() @ (P_nbc.transpose() @ vecs)])
+P_nbc = model.model['Prol'][0]
+P_nvel_bc = model.model['Prol'][1]
+P_npre_bc = model.model['Prol'][2]
+vecs = np.bmat([P_npre_bc.T @ (P_nbc.T @ vecs), P_nvel_bc.T @ (P_nbc.T @ vecs)])
 
 Error_vecs = np.linalg.norm(np.abs(vecs) - np.abs(vecs_m[:, 0]), ord=np.inf)
 # print results
