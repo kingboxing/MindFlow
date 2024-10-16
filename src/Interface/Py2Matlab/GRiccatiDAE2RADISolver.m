@@ -85,4 +85,11 @@ te = toc(ts);
 output = out;
 output.etime = te;
 output.res = transpose(out.res);
+
+if isfield(out, 'D')
+    output.D = spmat2struct(sparse(out.D));
+end
+if isfield(out, 'Y')
+    output.Y = spmat2struct(sparse(out.Y));
+end
 end

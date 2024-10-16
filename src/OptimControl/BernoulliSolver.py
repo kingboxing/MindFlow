@@ -39,6 +39,8 @@ class BernoulliFeedback:
         """
         Assign the state-space model.
 
+        Mass = E_full = | M   0 |      State = A_full = | A   G  |
+                        | 0   0 |                       | GT  Z=0|
         Parameters
         ----------
         model : dict or StateSpaceDAE2
@@ -55,30 +57,12 @@ class BernoulliFeedback:
         if isinstance(model, dict):
             self.model = model
             if 'E_full' not in model or 'A_full' not in model:
-                self._assemble_statespace()
+                self.A_full, self.E_full = assemble_dae2(self.model)
             else:
                 self.E_full = self.model['E_full']
                 self.A_full = self.model['A_full']
         else:
             raise TypeError('Invalid type for state-space model.')
-
-        # self.E_full = self.model['E_full']
-        # self.A_full = self.model['A_full']
-
-    def _assemble_statespace(self):
-        """
-        Assemble state-space matrices from block matrices.
-
-        Mass = E_full = | M   0 |      State = A_full = | A   G  |
-                        | 0   0 |                       | GT  Z=0|
-        """
-        # assemble block matrix of mass and state matrices
-        n = self.model['G'].shape[1]
-        self.A_full = assemble_sparse([[self.model['A'], self.model['G']], [self.model['G'].T, None]])
-        self.E_full = assemble_sparse([[self.model['M'], None], [None, sp.csr_matrix((n, n))]])
-
-        # Update state-space model with assembled matrices
-        #self.model.update({'E_full': E_full, 'A_full': A_full})
 
     def _real_projection_basis(self, vals, vecs):
         """

@@ -509,3 +509,180 @@ def assemble_dae2(model):
     ])
 
     return A_full, E_full
+
+
+def is_diag_sparse(sparse_matrix):
+    """
+    Check if a sparse matrix is a diagonal matrix.
+
+    Parameters:
+    - sparse_matrix: A scipy sparse matrix.
+
+    Returns:
+    - True if the matrix is diagonal, False otherwise.
+    """
+    # Convert the matrix to COO format (for efficient access to non-zero elements)
+    coo_matrix = sparse_matrix.tocoo()
+
+    # Check if all non-zero elements are on the diagonal
+    return np.all(coo_matrix.row == coo_matrix.col)
+
+
+def find_block_boundaries(sparse_matrix):
+    """
+    Find the block boundaries in a sparse block diagonal matrix based on the index pattern of non-zero elements.
+
+    Parameters:
+    - sparse_matrix: A sparse matrix in CSR format.
+
+    Returns:
+    - block_boundaries: A list of indices indicating where the blocks start and end.
+    """
+    if not sp.isspmatrix_csr(sparse_matrix):
+        sparse_matrix = sparse_matrix.tocsr()
+
+    n = sparse_matrix.shape[0]
+
+    # Initialize block boundaries list
+    block_boundaries = [0]
+
+    # Find where each block ends by checking the row-wise non-zero pattern
+    for i in range(1, n):
+        # Check if row i has any non-zero elements before column i
+        row_nonzeros = sparse_matrix.indices[sparse_matrix.indptr[i]:sparse_matrix.indptr[i + 1]]
+
+        # If there are no non-zeros in the current row before column i, it indicates a new block
+        if len(row_nonzeros) == 0 or np.all(row_nonzeros >= i):
+            block_boundaries.append(i)
+
+    block_boundaries.append(n)
+    return block_boundaries
+
+
+def extract_diagonal_blocks(sparse_matrix):
+    """
+    Extract diagonal blocks from a sparse block diagonal matrix based on its non-zero pattern.
+
+    Parameters:
+    - sparse_matrix: A sparse matrix (CSR format) with a block diagonal structure.
+
+    Returns:
+    - blocks: A list of dense matrices representing the diagonal blocks.
+    """
+    # Ensure the matrix is in CSR format for efficient row-wise operations
+    if not sp.isspmatrix_csr(sparse_matrix):
+        sparse_matrix = sparse_matrix.tocsr()
+
+    # Find block boundaries
+    block_boundaries = find_block_boundaries(sparse_matrix)
+
+    # Extract the diagonal blocks
+    blocks = []
+    for i in range(len(block_boundaries) - 1):
+        start = block_boundaries[i]
+        end = block_boundaries[i + 1]
+
+        # Extract the submatrix (block) and convert it to a dense format
+        block = sparse_matrix[start:end, start:end].toarray()
+        blocks.append(block)
+
+    return blocks
+
+
+def invert_dense_blocks(blocks):
+    """
+    Compute the inverse of each dense block matrix in the list.
+
+    Parameters:
+    - blocks: A list of dense matrices.
+
+    Returns:
+    - inverted_blocks: A list of inverted dense matrices.
+    """
+    inverted_blocks = []
+    for block in blocks:
+        # Invert the block using NumPy's inverse function
+        block_inv = np.linalg.inv(block)
+        inverted_blocks.append(block_inv)
+    return inverted_blocks
+
+
+def assemble_diag_block_matrix(inverted_blocks):
+    """
+    Assemble the inverted blocks into a sparse block diagonal matrix.
+
+    Parameters:
+    - inverted_blocks: A list of inverted dense matrices.
+
+    Returns:
+    - A sparse matrix with the inverted blocks on its diagonal.
+    """
+    # Use scipy.sparse.block_diag to create a block diagonal sparse matrix
+    sparse_block_diag = sp.block_diag(inverted_blocks)
+    return sparse_block_diag
+
+
+def invert_diag_block_matrix(sparse_matrix, maxsize=3000):
+    """
+    Extract diagonal blocks from a sparse block diagonal matrix, compute the inverse of each block,
+    and assemble the inverted blocks into a sparse block diagonal matrix.
+
+    Parameters:
+    - sparse_matrix: A sparse matrix (CSR format) with a block diagonal structure.
+    - maxsize: The maximum size of the block diagonal matrix will be operated in a dense format.
+
+    Returns:
+    - sparse_inverted_block_matrix: A sparse/dense matrix with the inverted blocks on its diagonal.
+    """
+    if not sp.issparse(sparse_matrix):
+        sparse_matrix = sp.csr_matrix(sparse_matrix)
+    if not sp.isspmatrix_csr(sparse_matrix):
+        sparse_matrix = sparse_matrix.tocsr()
+
+    if sparse_matrix.shape[0] < maxsize:
+        sparse_inverted_block_matrix = np.linalg.inv(sparse_matrix.toarray())
+    else:
+        # Step 1: Extract diagonal blocks
+        blocks = extract_diagonal_blocks(sparse_matrix)
+        # Step 2: Invert the dense blocks
+        inverted_blocks = invert_dense_blocks(blocks)
+        # Step 3: Assemble the inverted blocks into a sparse block diagonal matrix
+        sparse_inverted_block_matrix = assemble_diag_block_matrix(inverted_blocks)
+
+    return sparse_inverted_block_matrix
+
+
+def cholesky_sparse(sparse_matrix, maxsize=3000):
+    """
+    Compute the cholesky decomposition A = L * L' of a sparse symmetric, positive-definite matrix
+
+    Parameters:
+    - sparse_matrix: A diagonal sparse matrix in CSR or CSC format.
+    - maxsize: The maximum size of the block diagonal matrix will be operated in a dense format.
+
+    Returns:
+    - sparse_matrix_inv: The cholesky decomposition factor L of the input sparse matrix.
+    """
+    # Ensure the matrix is sparse and in CSC format
+    if not sp.issparse(sparse_matrix):
+        sparse_matrix = sp.csc_matrix(sparse_matrix)
+
+    if not sp.isspmatrix_csc(sparse_matrix):
+        sparse_matrix = sparse_matrix.tocsc()
+
+    if is_diag_sparse(sparse_matrix):
+        # Get the diagonal elements (non-zero values in a diagonal matrix)
+        diagonal = sparse_matrix.diagonal()
+        # Invert the diagonal elements (take the reciprocal of each non-zero element)
+        diagonal_chol = np.sqrt(diagonal)
+        # Update the matrix with the inverted diagonal elements
+        sparse_matrix_chol = sp.diags(diagonal_chol, format='csr')
+    elif is_symmetric(sparse_matrix):
+        if sparse_matrix.shape[0] < maxsize:
+            sparse_matrix_chol = np.linalg.cholesky(sparse_matrix.roarray())
+        else:
+            sparse_matrix_chol = cholesky(sparse_matrix, ordering_method="natural").L()
+    else:
+        raise ValueError("Sparse matrix is not a diagonal or a symmetric positive definite matrix.")
+
+    return sparse_matrix_chol

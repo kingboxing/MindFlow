@@ -57,8 +57,8 @@ def pymess_riccati_test():
 
 
 #%%
-def mmess_nmriccati_test():
-    print('------------ MMESS Newton Solver------------')
+def mmess_nmriccati_test(case=0):
+    print(f'------------ MMESS Newton Solver (case {case})------------')
     m = sio.mmread("data/mess/NSE_RE_500_lvl1_M.mtx").tocsr()
     a = sio.mmread("data/mess/NSE_RE_500_lvl1_A.mtx").tocsr()
     g = sio.mmread("data/mess/NSE_RE_500_lvl1_G.mtx").tocsr()
@@ -78,12 +78,17 @@ def mmess_nmriccati_test():
     solver.param[solver.param['solver_type']]['shifts']['num_desired'] = 5
     solver.param[solver.param['solver_type']]['shifts']['method'] = 'projection'
     solver.param[solver.param['solver_type']]['nm']['K0'] = k0
-    solver.param[solver.param['solver_type']]['nm']['info'] = True
+    solver.param[solver.param['solver_type']]['nm']['info'] = False
+    if case == 1:
+        # Z * D * Z
+        solver.param[solver.param['solver_type']]['LDL_T'] = True
+        solver.eqn['Q'] = np.identity(c.shape[0])
+        solver.eqn['R'] = np.identity(b.shape[1])
 
     solver.solve_riccati()
 
     # solve equation
-    z = solver.facZ
+    z = solver.facZ['Z']
 
     matq = cholesky(m.tocsc(), ordering_method="natural").L().transpose()
     status = solver.status
@@ -157,11 +162,12 @@ def mmess_radiriccati_test(case):
 
 #%%
 #pymess_riccati_test()
-mmess_nmriccati_test()
-mmess_radiriccati_test(case=0)
-mmess_radiriccati_test(case=1)
-mmess_radiriccati_test(case=2)
-mmess_radiriccati_test(case=3)
+#mmess_nmriccati_test()
+mmess_nmriccati_test(case=1)
+# mmess_radiriccati_test(case=0)
+# mmess_radiriccati_test(case=1)
+# mmess_radiriccati_test(case=2)
+# mmess_radiriccati_test(case=3)
 #%%
 elapsed_time = time.time() - start_time
 cpu_usage_after = psutil.cpu_percent(interval=None, percpu=True)

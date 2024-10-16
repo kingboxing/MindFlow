@@ -20,6 +20,7 @@ from src.NSolver.SteadySolver import NewtonSolver
 from src.NSolver.TransiSolver import DNS_IPCS
 from src.FreqAnalys.FreqSolver import FrequencyResponse
 from src.LinAlg.VectorAsm import VectorGenerator
+from src.LinAlg.MatrixOps import InverseMatrixOperator
 from src.FreqAnalys.EigenSolver import EigenAnalysis
 from src.FreqAnalys.ResolSolver import ResolventAnalysis
 from src.OptimControl.SystemModel import StateSpaceDAE2
@@ -27,6 +28,7 @@ from src.OptimControl.BernoulliSolver import BernoulliFeedback
 from src.OptimControl.RiccatiSolver import GRiccatiDAE2Solver
 from src.OptimControl.LQESolver import LQESolver
 from src.OptimControl.LQRSolver import LQRSolver
+
 
 import psutil
 import time

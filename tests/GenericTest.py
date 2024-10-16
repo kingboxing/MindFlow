@@ -1,9 +1,11 @@
 import matlab.engine
 import scipy.sparse as sp
+import numpy as np
+import time
 from scipy.io import mmread
 from src.Interface.Py2Mat import add_matlab_path, python2matlab, matlab2python
 from src.Params.Params import DefaultParameters
-from src.LinAlg.Utils import assemble_sparse
+from src.LinAlg.Utils import assemble_sparse, invert_diag_block_matrix
 
 # Start MATLAB engine
 eng = matlab.engine.start_matlab()
@@ -20,13 +22,27 @@ mg = sp.csr_matrix(g.shape)
 model['E_'] = assemble_sparse([[m,mg],[mg.T, None]])
 model['B'] = b
 model['C'] = c
+model['Q'] = np.identity(c.shape[0])
+model['R'] = np.identity(b.shape[1])
 model_mat = python2matlab(model)
 #%% params
 param = DefaultParameters().parameters['radiriccati_mmess']['riccati_solver']
+param['LDL_T'] = False
 param['eqn']['type']='T'
 #param['radi']['K0'] = python2matlab(k0)
-param['radi']['get_ZZt'] = True
+param['radi']['get_ZZt'] = False
 #%%
 output = eng.GRiccatiDAE2RADISolver(model_mat, param)
 out = matlab2python(output)
 #eng.quit()
+
+y = out['Y']
+start_time = time.time()
+dinv = np.linalg.inv(y.toarray())
+end_time = time.time()
+print("Time to compute the inverse:", end_time - start_time, "seconds")
+
+start_time = time.time()
+yinv=invert_diag_block_matrix(y)
+end_time = time.time()
+print("Time to compute the inverse:", end_time - start_time, "seconds")

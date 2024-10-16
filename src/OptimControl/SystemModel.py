@@ -143,8 +143,7 @@ class StateSpaceDAE2(FreqencySolverBase):
                         | 0   0 |                       | GT  Z=0|
         """
         # assemble block matrix of mass and state matrices
-        A_full = assemble_sparse([[self.model['A'], self.model['G']], [self.model['G'].T, None]])
-        E_full = assemble_sparse([[self.model['M'], None], [None, self.model['Z']]])
+        A_full, E_full = assemble_dae2(self.model)
         # Update state-space model with assembled matrices
         self.model.update({'E_full': E_full, 'A_full': A_full})
 

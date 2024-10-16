@@ -73,4 +73,8 @@ te = toc(ts);
 %% output
 output = rmfield(out, 'adi');
 output.etime= te;
+if isfield(out, 'D')
+    output.D = spmat2struct(sparse(out.D));
+end
+
 end

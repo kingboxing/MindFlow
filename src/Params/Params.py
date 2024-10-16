@@ -30,8 +30,6 @@ class DefaultParameters:
                                  'state_space_model':   self._initialize_ssmodel_defaults,
                                  'bernoulli_feedback':  self._initialize_bernoulli_defaults,
                                  'nmriccati_pymess':    self._initialize_nmriccati_pymess_defaults,
-                                 'lqe_pymess':          self._initialize_lqe_pymess_defaults,
-                                 'lqr_pymess':          self._initialize_lqr_pymess_defaults,
                                  'newton_solver':       self._initialize_newton_defaults,
                                  'IPCS_solver':         self._initialize_IPCS_defaults,
                                  'nmriccati_mmess':     self._initialize_nmriccati_mmess_defaults,
@@ -160,15 +158,6 @@ class DefaultParameters:
                            }
 
         self.parameters['nmriccati_pymess'] = defaults_pymess
-
-    def _initialize_lqe_pymess_defaults(self):
-        self.parameters['lqe_pymess'] = copy.deepcopy(self.parameters['nmriccati_pymess'])
-        self.parameters['lqe_pymess']['solver_type'] = 'lqe_solver'
-
-    def _initialize_lqr_pymess_defaults(self):
-        self.parameters['lqr_pymess'] = copy.deepcopy(self.parameters['nmriccati_pymess'])
-        self.parameters['lqr_pymess']['solver_type'] = 'lqr_solver'
-        self.parameters['lqr_pymess']['riccati_solver']['type'] = 1  # mess.MESS_OP_TRANSPOSE
 
     def _initialize_nmriccati_mmess_defaults(self):
         """

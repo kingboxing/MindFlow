@@ -6,3 +6,4 @@ Modules for frequency analysis, including eigenvalue solvers and resolvent metho
 from .EigenSolver import *
 from .FreqSolver import *
 from .ResolSolver import *
+from .FreqSolverBase import *

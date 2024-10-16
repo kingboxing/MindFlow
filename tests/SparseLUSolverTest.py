@@ -5,8 +5,8 @@ Created on Tue Aug 27 20:08:19 2024
 
 @author: bojin
 """
-from src.Deps import *
-from src.LinAlg.MatrixOps import InverseMatrixOperator,FEniCSLU,PETScLU,SuperLU,UmfpackLU
+
+from context import *
 
 Ar = sp.csr_matrix([[4, 1, 5], [1, 3, 2], [2,1,4]], dtype=np.float64)
 Ai = sp.csr_matrix([[0, -1, -2], [1, 0, 4],[-1,3,5]], dtype=np.float64)

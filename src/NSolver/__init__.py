@@ -1,1 +1,1 @@
-# FERePack/src/NSolver/__init__.py"""Nonlinear, steady-state and transient solvers for various equations and systems."""from .SteadySolver import *from .TransiSolver import *
+# FERePack/src/NSolver/__init__.py"""Nonlinear, steady-state and transient solvers for various equations and systems."""from .SteadySolver import *from .TransiSolver import *from .SolverBase import *

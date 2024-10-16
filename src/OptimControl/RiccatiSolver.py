@@ -14,9 +14,10 @@ for index-2 systems using the M.E.S.S. library.
 from ..Deps import *
 
 from ..OptimControl.SystemModel import StateSpaceDAE2
-from ..LinAlg.Utils import distribute_numbers, dict_deep_update, deep_set_attr, assemble_dae2, assemble_sparse
+from ..LinAlg.Utils import distribute_numbers, deep_set_attr, assemble_dae2, cholesky_sparse, invert_diag_block_matrix
 from ..Params.Params import DefaultParameters
 from ..Interface.Py2Mat import python2matlab, matlab2python, start_matlab
+
 
 class GRiccatiDAE2Solver:
     """
@@ -24,6 +25,7 @@ class GRiccatiDAE2Solver:
     like the H2 norm.
     Supports both Python (Py M.E.S.S.) and MATLAB (M M.E.S.S.) backends.
     """
+
     def __init__(self, model, method='nm', backend='python'):
         """
         Initialize the Riccati solver with a state-space model.
@@ -96,9 +98,7 @@ class GRiccatiDAE2Solver:
         """
         formulate system matrices while using Matlab backend.
         """
-        n = self.eqn['G'].shape[1]
-        A_full = assemble_sparse([[self.eqn['A'], self.eqn['G']], [self.eqn['G'].T, None]])
-        E_full = assemble_sparse([[self.eqn['M'], None], [None, sp.csr_matrix((n, n))]])
+        A_full, E_full = assemble_dae2(self.eqn)
         # Update state-space model with assembled matrices
         eqn_mat = {'E_': E_full, 'A_': A_full, 'B': self.eqn['B'], 'C': self.eqn['C']}
         if self.param['riccati_solver']['eqn']['haveUV']:
@@ -145,7 +145,8 @@ class GRiccatiDAE2Solver:
         """
         if self.param['method'] == 'nm' and self.param['backend'] == 'python':
             self._apply_parameters()
-            eqn = mess.EquationGRiccatiDAE2(self.param['mess_options'], self.eqn['M'], self.eqn['A'], self.eqn['G'], self.eqn['B'], self.eqn['C'], self.param['riccati_solver']['delta'])
+            eqn = mess.EquationGRiccatiDAE2(self.param['mess_options'], self.eqn['M'], self.eqn['A'], self.eqn['G'],
+                                            self.eqn['B'], self.eqn['C'], self.param['riccati_solver']['delta'])
             self.facZ, self.status = mess.lrnm(eqn, self.param['mess_options'])
         elif self.param['backend'] == 'matlab':
             if engine is None:
@@ -166,12 +167,14 @@ class GRiccatiDAE2Solver:
             return self.facZ
 
         facZ = self.facZ['Z']
-        facD = None
-        if self.facZ['Y'] is not None:
-            facD = np.linalg.inv(self.facZ['Y'])
-        elif self.facZ['D'] is not None:
+
+        if self.param['riccati_solver']['LDL_T'] and self.facZ['D'] is not None:
             facD = self.facZ['D']
-        return facZ if facD is None else facZ @ np.linalg.cholesky(facD)
+        elif self.param['method'] == 'radi' and not self.param['riccati_solver']['radi']['get_ZZt'] and self.facZ['Y'] is not None:
+            facD = invert_diag_block_matrix(self.facZ['Y'], maxsize=30)
+        else:
+            facD = None
+        return facZ if facD is None else facZ @ cholesky_sparse(facD, maxsize=30)  # np.linalg.cholesky(facD)
 
     def _squared_h2norm_system(self, MatQ, pid=None, chunk_size=5000):
         """
@@ -200,6 +203,7 @@ class GRiccatiDAE2Solver:
 
         def h2norm_partial(start, iend):
             return np.sum(np.square(MatQ @ facZ[:, start:iend]))
+
         #%%
         # the number of cpus
         num_cores = multiprocessing.cpu_count()
@@ -271,199 +275,68 @@ class GRiccatiDAE2Solver:
 
         return np.diag(norm_T @ norm_T.T)
 
-class GRiccatiDAE2NMSolver_Pymess:
-    """
-    This class solves a generalized Riccati equation for an Index-2 system and computes
-    various performance metrics such as H2 norm.
-    """
-
-    def __init__(self, ssmodel):
+    def _feedback_pencil(self, U, V, mode):
         """
-        Initialize the Riccati solver with a state-space model.
+        Assemble the feedback pencil.
+        Matrix A can have the form A = Ã + U*V' if U (eqn.U) and V (eqn.V) are provided U and V are dense (n x m3)
+        matrices and should satisfy m3 << n
+
+        In LQE (e.g. sol_type = 'N') problem, V could always be the measurement matrix C, so U can be only added directly
+        In LQR (e.g. sol_type = 'T') problem, U could always be the actuation matrix B, so V can be only added directly
+        Otherwise, U, V stacked, and dimensions increase
 
         Parameters
         ----------
-        ssmodel : dict or StateSpaceDAE2
-            State-space model or dictionary containing the system matrices.
-
-        Description
-        ----------
-        MESS_DIRECT_DEFAULT_LU 0, the same as UMFPACK
-        
-        MESS_DIRECT_SPARSE_LU 1, too long time to check
-        
-        MESS_DIRECT_LAPACKLU 2, 
-        
-        MESS_DIRECT_UMFPACK_LU: 3, normal
-            
-        MESS_DIRECT_SUPERLU_LU : 4, check error occured, kernel died
-        
-        MESS_DIRECT_CSPARSE_LU 5, too long time to check
-        
-        MESS_DIRECT_BANDED_LU 6,
-        
-        MESS_DIRECT_MKLPARDISO_LU 7,
-
+        U : dense (n x m3) matrix
+            for feedback pencil.
+        V : dense (n x m3) matrix
+            for feedback pencil.
+        mode : int
+            Mode of assembling feedback pencil. Default is 0.
+            - If mode = 0, feedback is accumulated directly to the state matrix.
+            - If mode = 1 and backend = 'matlab', feedback is updated to U and V matrices in self.eqn.
 
         """
-        self.Model = ssmodel
-        self._apply_default_param()
-        self.facZ = None
-        self.status = None
-
-    def _apply_default_param(self):
-        """
-        Set default parameters for the Riccati solver.
-        """
-        self.param = DefaultParameters().parameters['nmriccati_pymess']
-        self.param['mess_options'] = mess.Options()
-        param_default = self.param['riccati_solver']
-        self.update_riccati_params(param_default)
-
-    def update_riccati_params(self, param):
-        """
-        Update the Riccati solver parameters.
-
-        Parameters
-        ----------
-        param : dict
-            A dictionary containing solver parameters to update.
-        """
-        self.param['riccati_solver'] = dict_deep_update(self.param['riccati_solver'], param)
-        if 'lusolver' in param:
-            mess.direct_select(param.pop('lusolver'))
-        deep_set_attr(self.param['mess_options'], param)
-
-    def _assign_model(self, ssmodel):
-        """
-        Assign the state-space model.
-
-        Parameters
-        ----------
-        ssmodel : dict or StateSpaceDAE2
-            State-space model.
-
-        Raises
-        ------
-        TypeError
-            If the input is not a valid state-space model.
-        """
-
-        if isinstance(ssmodel, dict):
-            self._M = ssmodel['M']
-            self._A = ssmodel['A']
-            self._G = ssmodel['G']
-            self._B = ssmodel['B']
-            self._C = ssmodel['C']
-        elif isinstance(self.ssmodel, StateSpaceDAE2):
-            self._M = ssmodel.M
-            self._A = ssmodel.A
-            self._G = ssmodel.G
-            self._B = ssmodel.B
-            self._C = ssmodel.C
+        # get solver type
+        backend = self.param['backend']
+        if backend == 'python':
+            sol_type = ['N', 'T'][self.param['riccati_solver']['type']]
+        elif backend == 'matlab':
+            sol_type = self.param['riccati_solver']['eqn']['type']
         else:
-            raise TypeError('Invalid type for state-space model.')
-
-    def solve_riccati(self, delta=-0.02):
-        """
-        Solve the generalized Riccati equation.
-        Provides the factor Z of the solution X = Z * Z^T.
-
-        Parameters
-        ----------
-        delta : float, optional
-            A real, negative scalar for shift-invert. Default is -0.02.
-
-        Returns
-        -------
-        status : M.E.S.S. status object
-            Status of the Riccati equation solver.
-        """
-
-        self._assign_model(self.Model)
-        eqn = mess.EquationGRiccatiDAE2(self.param['mess_options'], self._M, self._A, self._G, self._B, self._C, delta)
-        self.facZ, self.status = mess.lrnm(eqn, self.param['mess_options'])
-        return self.status
-
-    def squared_h2norm(self, MatQ, pid=None, chunk_size=5000):
-        """
-        Compute the squared H2 norm of the solution.
-        H2-Norm = Q * Z * Z^T * Q^T, where Q = M^(1/2).
-
-        Parameters
-        ----------
-        MatQ : scipy.sparse matrix
-            Factor of the weight matrix used to evaluate the H2 norm.
-        pid : int, optional
-            Number of parallel processes. Default is None (uses available cores).
-        chunk_size : int, optional
-            Maximum number of columns to process per iteration. Default is 5000.
-
-        Returns
-        -------
-        float
-            Squared H2 norm.
-        """
-        # the number of cpus
-        num_cores = multiprocessing.cpu_count()
-        # if pid is None then pid = max_num_cpu - 1
-        pid = pid or num_cores - 1
-        # the number of columns
-        n = self.facZ.shape[1]
-
-        def h2norm_partial(start, end):
-            return np.sum(np.square(MatQ @ self.facZ[:, start:end]))
-
-        if n <= chunk_size or pid == 1:
-            return h2norm_partial(0, n)
+            raise ValueError(f"Unsupported backend: {backend}")
+        # Modify U and V based on the solve type for negative feedback
+        if sol_type == 'N':
+            U = -U
+        elif sol_type == 'T':
+            V = -V
         else:
-            chunk_alloc = distribute_numbers(n, pid)
-            h2norms = np.zeros(pid)  # square of h2 norm from each processing
+            raise ValueError('Unrecognized solve type {}'.format(sol_type))
 
-            # Parallel computation of H2 norm
-            def h2norm_parallel(proc):
-                # start index for this process
-                size = chunk_alloc[proc]
-                ind_s = int(np.sum(chunk_alloc[:proc]))
-                # computes 5000 columns at the same time over all processes
-                iters = int(np.ceil(1.0 * size * pid / chunk_size))  # second division for mempry saving
-                # pass if size is zero
-                if iters:
-                    chunk_alloc_2nd = distribute_numbers(size, iters)
-                    sub_h2norm = 0
-                    for j in range(iters):
-                        # pass if chunk_alloc_2nd[j] is zero
-                        if chunk_alloc_2nd[j]:
-                            # end indices
-                            ind_e = ind_s + chunk_alloc_2nd[j]
-                            # h2norm for this part of facZ[:,ind_s:ind_z]
-                            sub_h2norm += h2norm_partial(ind_s, ind_e)
-                            # start indices
-                            ind_s = ind_e
-                    h2norms[proc] = sub_h2norm
-
-            # Parallel computation of H2 norm
-            jb.Parallel(n_jobs=pid, require='sharedmem')(jb.delayed(h2norm_parallel)(proc) for proc in range(pid))
-            return np.sum(h2norms)
-
-
-    def normvec_T(self, K):
-        """
-        Compute the contribution of each estimator/regulator on the H2 Norm?
-
-        Parameters
-        ----------
-        K : numpy array
-            Feedback matrix.
-
-        Returns
-        -------
-        numpy array
-            Diagonal matrix representing the contribution of each estimator.
-        """
-
-        if K.shape[1] != self.facZ.shape[0]:
-            K = K.T
-        norm_T = K @ self.facZ
-
-        return np.diag(norm_T @ norm_T.T)
+        if mode == 0:
+            # Accumulate feedback directly to the state matrix A
+            self.eqn['A'] += sp.csr_matrix(U) @ sp.csr_matrix(V.T)
+            self.eqn['A'].eliminate_zeros()
+            self.eqn['A'].sort_indices()  # sort data indices, prevent unmfpack error -8
+        elif mode == 1 and self.param['backend'] == 'matlab':
+            # Update feedback matrices U and V in MATLAB.
+            self.param['riccati_solver']['eqn'].update({'haveUV': True, 'sizeUV1': 'default'})
+            if 'U' in self.eqn and 'V' in self.eqn:
+                # update existing U and V in the equation.
+                mark = {'N': ['V', 'U'], 'T': ['U', 'V']}[sol_type]
+                dict_uv = {'V': V, 'U': U}
+                if dict_uv[mark[0]].shape[1] < self.eqn[mark[0]].shape[1] and np.array_equal(dict_uv[mark[0]], self.eqn[mark[0]][:, -dict_uv[mark[0]].shape[1]:]):
+                    # if U or V exists, only add V or U
+                    zeros = np.zeros((dict_uv[mark[1]].shape[0], self.eqn[mark[1]].shape[1] - dict_uv[mark[1]].shape[1]))
+                    UV_update = np.hstack((zeros, dict_uv[mark[1]])) + self.eqn[mark[1]]
+                    self.eqn.update({mark[1]: UV_update})
+                else:  # otherwise U, V stack, and dimensions increase
+                    self.eqn.update({
+                                        'U': np.hstack((self.eqn['U'], U)),
+                                        'V': np.hstack((self.eqn['V'], V))
+                                    })
+            else:
+                # First initialization
+                self.eqn.update({'U': U, 'V': V})
+        else:
+            raise ValueError(f'Invalid mode for feedback accumulation: {mode}')
