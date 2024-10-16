@@ -223,9 +223,11 @@ class StateSpaceDAE2(FreqencySolverBase):
             if not Mat or sp.issparse(Mat):
                 self._assemble_pencil(Mat)
             elif isinstance(Mat, dict):
-                self.model.update(Mat) # update Mat={'U': U, 'V':V}
+                self._assemble_pencil()
+                self.model.update(Mat)  # update Mat={'U': U, 'V':V}
             else:
-                raise TypeError('Invalid Type of feedback matrix Mat (Can be a sparse matrix or a dict containing U and V).')
+                raise TypeError(
+                    'Invalid Type of feedback matrix Mat (Can be a sparse matrix or a dict containing U and V).')
             self._initialize_prolmat()
             self._initialize_statespace()
             #self._assemble_statespace()
