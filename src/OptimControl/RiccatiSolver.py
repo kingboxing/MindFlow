@@ -171,10 +171,10 @@ class GRiccatiDAE2Solver:
         if self.param['riccati_solver']['LDL_T'] and self.facZ['D'] is not None:
             facD = self.facZ['D']
         elif self.param['method'] == 'radi' and not self.param['riccati_solver']['radi']['get_ZZt'] and self.facZ['Y'] is not None:
-            facD = invert_diag_block_matrix(self.facZ['Y'], maxsize=30)
+            facD = invert_diag_block_matrix(self.facZ['Y'], maxsize=3000)
         else:
             facD = None
-        return facZ if facD is None else facZ @ cholesky_sparse(facD, maxsize=30)  # np.linalg.cholesky(facD)
+        return facZ if facD is None else facZ @ cholesky_sparse(facD, maxsize=3000)  # np.linalg.cholesky(facD)
 
     def _squared_h2norm_system(self, MatQ, pid=None, chunk_size=5000):
         """
