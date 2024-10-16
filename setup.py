@@ -15,9 +15,16 @@ setup(
         'scikit-sparse',
         'scikit-umfpack',
         'pymess',
-        'matlabengine'
+        'matlab.engine'
         'psutil',
+        'time',
         'joblib',
+        'copy',
+        'multiprocessing',
+        'petsc4py',
+        'gc',
+        'os',
+        'sys',
         # List your dependencies here (e.g., fenics, numpy)
     ],
     description='FERePack: FEniCS-based package for frequency-based analysis and control problems.',
