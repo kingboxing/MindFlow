@@ -11,6 +11,7 @@ This module provides functions for matrix/vector conversion, assembling linear o
 """
 
 from ..Deps import *
+from ..LinAlg.Utils import woodbury_solver
 
 #%%
 """
@@ -284,6 +285,8 @@ class SparseLUSolver:
         pass
 
     solve.stype = stype
+
+
 #%%
 
 
@@ -759,7 +762,7 @@ class InverseMatrixOperator(spla.LinearOperator):
     Supports various LU solvers.
     """
 
-    def __init__(self, A, A_lu=None, lusolver='mumps', trans='N', echo=False):
+    def __init__(self, A, A_lu=None, Mat=None, lusolver='mumps', trans='N', echo=False):
         """
         Initialize the InverseMatrixOperator object.
 
@@ -769,6 +772,8 @@ class InverseMatrixOperator(spla.LinearOperator):
             The matrix to invert or solve.
         A_lu : LU decomposition object, optional
             Precomputed LU decomposition of A. Default is None.
+        Mat : dict with real matrices U, V, optional
+            The matrix/dict to formulate A^trans + Mat, where Mat = U * V'. Default is None.
         lusolver : str, optional
             Type of LU solver to use ('mumps', 'superlu', 'umfpack', 'petsc'). Default is 'mumps'.
         trans : str, optional
@@ -787,7 +792,10 @@ class InverseMatrixOperator(spla.LinearOperator):
         self.count = 0
         self.echo = echo
         self.trans = trans
+        self.Mat = Mat
         self.solve = self._initialize_solver(A, A_lu, lusolver)
+        # if self.Mat is not None:
+        #     self._initialize_woodbury()
 
     def _initialize_solver(self, A, A_lu, lusolver):
         """
@@ -861,6 +869,28 @@ class InverseMatrixOperator(spla.LinearOperator):
         #         self.A_lu=A_lu
         #         self.solve=self.__solve
 
+    def _initialize_woodbury(self):
+        """
+        Initialize the Sherman-Morrison-Woodbury formula based on the chosen solver type.
+        """
+        k = self.Mat['U'].shape[1]
+        m = self.shape[0]
+        Uk = np.zeros((m, k))
+        for i in range(k):
+            Uk[:, i] = self.solve(self.Mat['U'][:, i], self.trans)
+        Wk = np.linalg.inv(np.identity(k) + self.Mat['V'].T @ Uk)
+        Vk = Wk @ self.Mat['V'].T
+        self.Mat.update({'U': Uk, 'V': Vk})
+
+    def _woodbury_solve(self, bk, trans):
+        k = self.Mat['U'].shape[1]
+        m = self.shape[0]
+        Uk = np.zeros((m, k)).astype(self.dtype)
+        for i in range(k):
+            Uk[:, i] = self.solve(self.Mat['U'][:, i], trans)
+
+        return woodbury_solver(Uk, self.Mat['V'], bk)
+
     def _solve(self, b, trans='N'):
         """
         Internal solve method for precomputed LU decomposition object from public packages
@@ -925,8 +955,9 @@ class InverseMatrixOperator(spla.LinearOperator):
         self.count += 1
         if self.echo:
             print(f"Number of the linear system solved: {self.count}")
+        bk = self.solve(b, self.trans)
 
-        return self.solve(b, self.trans)
+        return bk if self.Mat is None else self._woodbury_solve(bk, self.trans)  # bk - self.Mat['U'] @ (self.Mat['V'] @ bk)
 
     def _rmatvec(self, b):
         """
@@ -949,8 +980,18 @@ class InverseMatrixOperator(spla.LinearOperator):
             print(f"Number of the linear system solved: {self.count}")
 
         if self.trans == 'N':
-            return self.solve(b, 'H')
+            bk = self.solve(b, 'H')
+            return bk if self.Mat is None else self._woodbury_solve(bk, 'H')
+
         elif self.trans == 'H':
-            return self.solve(b, 'N')
+            bk = self.solve(b, 'N')
+            return bk if self.Mat is None else self._woodbury_solve(bk, 'N')
         elif self.trans == 'T':
-            return np.conj(self.solve(np.conj(b), 'N'))
+            bk = np.conj(self.solve(np.conj(b), 'N'))
+            if self.Mat is None:
+                return bk
+            else:
+                Uk = np.zeros(self.Mat['U'].shape).astype(self.dtype)
+                for i in range(self.Mat['U'].shape[1]):
+                    Uk[:, i] = np.conj(self.solve(np.conj(self.Mat['U'][:, i]), 'N'))
+                return woodbury_solver(Uk, self.Mat['V'], bk)
