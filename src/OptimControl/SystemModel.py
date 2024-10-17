@@ -208,7 +208,7 @@ class StateSpaceDAE2(FreqencySolverBase):
         Re : float, optional
             Reynolds number.
         Mat : scipy.sparse matrix or dict with Mat = U * V, optional
-            Feedback matrix.
+            Feedback matrix (negative feedback).
         sz : complex or tuple/list of complex, optional
             Spatial frequency parameters for quasi-analysis of the flow field. Default is None.
         reuse : bool, optional
@@ -224,7 +224,7 @@ class StateSpaceDAE2(FreqencySolverBase):
                 self._assemble_pencil(Mat)
             elif isinstance(Mat, dict):
                 self._assemble_pencil()
-                self.model.update(Mat)  # update Mat={'U': U, 'V':V}
+                self.model.update({'U': -Mat['U'], 'V': Mat['V']})  # update Mat={'U': U, 'V':V}
             else:
                 raise TypeError(
                     'Invalid Type of feedback matrix Mat (Can be a sparse matrix or a dict containing U and V).')
