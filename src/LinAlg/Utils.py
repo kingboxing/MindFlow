@@ -6,7 +6,6 @@ Created on Wed Aug 28 18:48:11 2024
 @author: bojin
 """
 from ..Deps import *
-from ..LinAlg.MatrixOps import InverseMatrixOperator
 
 
 def assign2(receiving_func, assigning_func):
@@ -232,8 +231,10 @@ def eigen_decompose(A, M=None, k=3, sigma=0.0, solver_params=None):
     vecs : numpy array
         Eigenvectors.
     """
-    # Default parameters for eigenvalue solver
+    # import functions
     from ..Params.Params import DefaultParameters
+    from ..LinAlg.MatrixOps import InverseMatrixOperator
+    # Default parameters for eigenvalue solver
     default_params = DefaultParameters().parameters['eigen_decompose']
     if solver_params is None:
         solver_params = {}
@@ -686,3 +687,45 @@ def cholesky_sparse(sparse_matrix, maxsize=3000):
         raise ValueError("Sparse matrix is not a diagonal or a symmetric positive definite matrix.")
 
     return sparse_matrix_chol
+
+
+def woodbury_solver(U, V, b):
+    """
+    Solve the system (I + U * V^T) x = b using the Woodbury matrix identity.
+
+    The Woodbury identity is:
+    (I + U * V^T)^-1 = I - U * (I + V^T * U)^-1 * V^T
+
+    Parameters
+    ----------
+    U : numpy array of shape (n, k)
+        Matrix U in the Woodbury identity.
+
+    V : numpy array of shape (n, k)
+        Matrix V in the Woodbury identity.
+
+    b : numpy array of shape (n,) or (n, 1)
+        Right-hand side vector or matrix for the system.
+
+    Returns
+    -------
+    x : numpy array of shape (n,)
+        The solution to the system (I + U * V^T) x = b.
+    """
+    n, k = U.shape
+
+    # Ensure V has the right shape
+    if V.shape == (k, n):
+        V = V.T
+    elif V.shape != (n, k):
+        raise ValueError("V.T and U must have same shape")
+    # Ensure b is a column vector
+    if b.shape == (n,):
+        b = b.reshape(n, 1)
+    elif b.shape == (1, n):
+        b = b.T
+    elif b.shape != (n, 1):
+        raise ValueError("b must have the shape (n,) or (n, 1)")
+
+    x = b - U @ (np.linalg.inv(np.identity(k) + V.T @ U) @ V.T @ b)
+    return x.flatten()
