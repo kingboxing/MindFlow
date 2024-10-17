@@ -7,13 +7,15 @@ Created on Tue Aug 27 20:08:19 2024
 """
 
 from context import *
+from src.LinAlg.MatrixOps import FEniCSLU, PETScLU, SuperLU, UmfpackLU
 
 Ar = sp.csr_matrix([[4, 1, 5], [1, 3, 2], [2,1,4]], dtype=np.float64)
 Ai = sp.csr_matrix([[0, -1, -2], [1, 0, 4],[-1,3,5]], dtype=np.float64)
 A = Ar + 1j * Ai
 vr = np.array([1, 3, 4], dtype=np.float64)
 vi = np.array([2, 4, 6], dtype=np.float64)
-v = vr + 1j*vi 
+v = vr + 1j*vi
+
 
 def test_MatInv(lusolver, trans, A, b):
     print("Testing InverseMatrixOperator("+lusolver+", trans="+trans+")...")
@@ -46,7 +48,41 @@ def test_MatInv(lusolver, trans, A, b):
     print("b=Ax:", Ax)
     print("Original b:", b)
     assert np.allclose(Ax,b, atol=1e-6), "Ax does not match the original b."
-    
+
+
+def test_MatInvUV(lusolver, trans, A, b):
+    print("Testing InverseMatrixOperator(" + lusolver + ", trans=" + trans + ")...")
+
+    U = np.random.rand(3, 1) + np.random.rand(3, 1) * 1j
+    V = np.random.rand(3, 1) + np.random.rand(3, 1) * 1j
+    # b = np.random.rand(3) + np.random.rand(3) * 1j
+
+    Mat = {'U': U, 'V': V}
+
+    # Initialize the MatInv solver with the complex matrix
+    # This example uses the 'mumps' solver, which is a common choice for LU factorization.
+    mat_inv = InverseMatrixOperator(A, Mat=Mat, lusolver=lusolver, trans=trans)
+
+    # Solve the system A*x = b
+    x = mat_inv.matvec(b)
+
+    # Output the result
+    print("Solution x:", x)
+
+    # Verify by computing A*x and comparing it with b
+    if trans == 'N':
+        A_complex = A + U @ V.T
+        Ax = A_complex.dot(x)
+    elif trans == 'T':
+        A_complex = A.T + U @ V.T
+        Ax = A_complex.dot(x)
+    elif trans == 'H':
+        A_complex = A.T.conjugate() + U @ V.T
+        Ax = A_complex.dot(x)
+
+    print("b=(A+UV')x:", Ax)
+    print("Original b:", b)
+    assert np.allclose(Ax, b, atol=1e-6), "Ax does not match the original b."
 
 def test_SparseLU(func, trans, A, x):
     print("Testing "+func+"(trans="+trans+")...")
@@ -81,6 +117,19 @@ def test_SparseLU(func, trans, A, x):
 
 # Run the test
 if __name__ == "__main__":
+    print("***(A+UV')x=b (Complex LHS & complex RHS)****")
+    test_MatInvUV('mumps', 'N', A, v)
+    test_MatInvUV('mumps', 'T', A, v)
+    test_MatInvUV('mumps', 'H', A, v)
+    test_MatInvUV('petsc', 'N', A, v)
+    test_MatInvUV('petsc', 'T', A, v)
+    test_MatInvUV('petsc', 'H', A, v)
+    test_MatInvUV('superlu', 'N', A, v)
+    test_MatInvUV('superlu', 'T', A, v)
+    test_MatInvUV('superlu', 'H', A, v)
+    test_MatInvUV('umfpack', 'N', A, v)
+    test_MatInvUV('umfpack', 'T', A, v)
+    test_MatInvUV('umfpack', 'H', A, v)
     print("***Complex LHS & complex RHS****")
     test_MatInv('mumps', 'N', A, v)
     test_MatInv('mumps', 'T', A, v)
