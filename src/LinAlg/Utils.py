@@ -753,7 +753,7 @@ def find_orthogonal_complement(A, U, M=None, tolerance=1e-6):
         The sparse weight matrix.
 
     tolerance : float, optional
-        Traction tolerance for filtering insignificant modes based on singular values.
+        Relative truncation tolerance for filtering insignificant modes based on singular values.
 
     Returns
     -------
@@ -777,7 +777,7 @@ def find_orthogonal_complement(A, U, M=None, tolerance=1e-6):
     sig = np.diag(np.reciprocal(np.sqrt(eigvals)))
 
     # Step 4: Apply the traction tolerance to filter out small singular values
-    significant_modes = np.sqrt(eigvals) > tolerance
+    significant_modes = np.sqrt(eigvals) > tolerance * np.sqrt(np.sum(eigvals))
     U_hat_filtered = (R @ eigvecs @ sig)[:, significant_modes] # Keep only significant modes
 
     # Step 5: Combine the original U with the filtered new orthogonal complement
