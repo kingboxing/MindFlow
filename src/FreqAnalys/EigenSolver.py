@@ -66,6 +66,7 @@ class EigenAnalysis(FreqencySolverBase):
             self.A += -self.pencil[2].multiply(1j)
 
         param = self.param[self.param['solver_type']]
+        Mat = self.param['feedback_pencil']
 
         # shift-invert operator
         OP = self.A - sigma * self.M if sigma else self.A
@@ -76,7 +77,7 @@ class EigenAnalysis(FreqencySolverBase):
         if sigma is not None:
             if param['method'] == 'lu':
                 info(f"LU decomposition using {param['lusolver'].upper()} solver...")
-                self.OPinv = InverseMatrixOperator(OP, lusolver=param['lusolver'], echo=param['echo'])
+                self.OPinv = InverseMatrixOperator(OP, Mat=Mat, lusolver=param['lusolver'], echo=param['echo'])
                 info('Done.')
             else:
                 pass  # pending for iterative solvers
@@ -99,10 +100,15 @@ class EigenAnalysis(FreqencySolverBase):
         """
         param = self.param[self.param['solver_type']]
         OPinv = self.OPinv if sigma is not None else None
+        Mat = self.param['feedback_pencil']
+        if Mat is None:
+            A = self.A
+        else:
+            A = spla.aslinearoperator(self.A) + spla.aslinearoperator(Mat['U']) @ spla.aslinearoperator(Mat['V'].T)
 
         if sigma is not None:
             info('Internal Shift-Invert Mode Solver is on')
-        return spla.eigs(self.A, k=k, M=self.M, Minv=None, OPinv=OPinv, sigma=sigma, which=param['which'],
+        return spla.eigs(A, k=k, M=self.M, Minv=None, OPinv=OPinv, sigma=sigma, which=param['which'],
                          v0=param['v0'], ncv=param['ncv'], maxiter=param['maxiter'], tol=param['tol'],
                          return_eigenvectors=param['return_eigenvectors'], OPpart=param['OPpart'])
 
@@ -146,7 +152,7 @@ class EigenAnalysis(FreqencySolverBase):
 
         return vals, vecs
 
-    def solve(self, k=3, sigma=0.0, Re=None, Mat=None, reuse=False, sz=None):
+    def solve(self, k=3, sigma=0.0, Re=None, Mat=None, sz=None, reuse=False):
         """
         Solve for k eigenvalues and eigenvectors of system.
 
@@ -158,10 +164,8 @@ class EigenAnalysis(FreqencySolverBase):
             Reynolds number. The default is None.
         sigma : real or complex, optional
             Shift value for the shift-invert method. Default is 0.0.
-        Mat : scipy.sparse matrix, optional
-            Feedback matrix if control is applied. Default is None.
-        reuse : bool, optional
-            If True, reuse the previous solver and matrices. Default is False.
+        Mat : scipy.sparse matrix or dict with real matrices U, V, optional
+            Feedback matrix Mat = U * V'. Default is None.
         sz : complex or tuple/list of complex, optional
             Spatial frequency parameters for quasi-analysis of the flow field. Default is None.
             
@@ -170,6 +174,9 @@ class EigenAnalysis(FreqencySolverBase):
             elif BCpart == 'i'/None:
                 A is full-rank, M is not full rank, sigma = 0.0, enable shift-invert mode
                 vals_orig = 1.0 / vals_si, vals_si computed and vals_orig returned
+
+        reuse : bool, optional
+            If True, reuse the previous solver and matrices. Default is False.
 
         """
 
@@ -186,7 +193,14 @@ class EigenAnalysis(FreqencySolverBase):
 
         if not reuse:
             self._form_LNS_equations(s=1.0j, sz=sz)
-            self._assemble_pencil(Mat, symmetry=param['symmetry'], BCpart=param['BCpart'])
+            if Mat is None or sp.issparse(Mat):
+                self._assemble_pencil(Mat=Mat, symmetry=param['symmetry'], BCpart=param['BCpart'])
+            elif isinstance(Mat, dict) and 'U' in Mat and 'V' in Mat:
+                self.param['feedback_pencil'] = {'U': -Mat['U'], 'V': Mat['V']}
+                self._assemble_pencil(Mat=None, symmetry=param['symmetry'], BCpart=param['BCpart'])
+            else:
+                raise ValueError(
+                    'Invalid Type of feedback matrix Mat (Can be a sparse matrix or a dict containing U and V).')
             self._initialize_solver(sigma, param['inverse'])
 
         if param['solve_type'].lower() == 'implicit' and not param['inverse']:

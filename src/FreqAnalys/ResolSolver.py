@@ -54,6 +54,7 @@ class ResolventAnalysis(FreqencySolverBase):
             Restricted subdomain definition for input/force. Default is None.
         """
         param = self.param[self.param['solver_type']]
+        Mat = self.param['feedback_pencil']
         # matrix of the resolvent operator
         self.LHS = self.pencil[0] + self.pencil[1].multiply(1j)
         if self.element.dim > self.element.mesh.topology().dim():  #quasi-analysis
@@ -67,9 +68,11 @@ class ResolventAnalysis(FreqencySolverBase):
 
         if param['method'] == 'lu':
             info(f"LU decomposition using {param['lusolver'].upper()} solver...")
-            self.Linv = InverseMatrixOperator(self.LHS, lusolver=param['lusolver'], trans='N', echo=param['echo'])
-            self.LinvH = InverseMatrixOperator(self.LHS, A_lu=self.Linv.A_lu, lusolver=param['lusolver'], trans='H',
-                                               echo=param['echo'])
+            self.Linv = InverseMatrixOperator(self.LHS, Mat=Mat, lusolver=param['lusolver'], trans='N',
+                                              echo=param['echo'])
+            self.LinvH = InverseMatrixOperator(self.LHS, A_lu=self.Linv.A_lu, Mat=Mat, lusolver=param['lusolver'],
+                                               trans='H', echo=param['echo'])
+
             self.Qfinv = InverseMatrixOperator(Qf, lusolver=param['lusolver'], trans='N', echo=param['echo'])
             info('Done.')
 
@@ -150,7 +153,7 @@ class ResolventAnalysis(FreqencySolverBase):
 
         self.force_mode = self.mats['P'].dot(self.mats['Df'].dot(vecs))
 
-    def solve(self, k, s, Re=None, Mat=None, bound=[None, None], reuse=False, sz=None):
+    def solve(self, k, s, Re=None, Mat=None, bound=[None, None], sz=None, reuse=False):
         """
         Solve the resolvent problem.
 
@@ -162,17 +165,16 @@ class ResolventAnalysis(FreqencySolverBase):
             The Laplace variable.
         Re : float, optional
             Reynolds number. Default is None.
-        Mat : scipy.sparse matrix, optional
-            Feedback matrix. Default is None.
+        Mat : scipy.sparse matrix or dict with real matrices U, V, optional
+            Feedback matrix Mat = U * V'. Default is None.
         bound : list or tuple, optional
             Subdomain restrictions for the response and input, respectively. Default is [None, None].
-        reuse : bool, optional
-            Whether to reuse previous computations. Default is False.
         sz : complex or tuple/list of complex, optional
             Spatial frequency parameters for quasi-analysis of the flow field. Default is None.
+        reuse : bool, optional
+            Whether to reuse previous computations. Default is False.
         """
 
-        self.s = s
         param = self.param[self.param['solver_type']]
 
         if Re is not None:
@@ -180,7 +182,14 @@ class ResolventAnalysis(FreqencySolverBase):
 
         if not reuse:
             self._form_LNS_equations(s=s, sz=sz)
-            self._assemble_pencil(Mat=Mat, symmetry=param['symmetry'], BCpart=param['BCpart'])
+            if Mat is None or sp.issparse(Mat):
+                self._assemble_pencil(Mat=Mat, symmetry=param['symmetry'], BCpart=param['BCpart'])
+            elif isinstance(Mat, dict) and 'U' in Mat and 'V' in Mat:
+                self.param['feedback_pencil'] = Mat
+                self._assemble_pencil(Mat=None, symmetry=param['symmetry'], BCpart=param['BCpart'])
+            else:
+                raise ValueError(
+                    'Invalid Type of feedback matrix Mat (Can be a sparse matrix or a dict containing U and V).')
             self._initialize_solver(bound=bound[1])  # bound for forcing
             self._initialize_expr(bound=bound[0])  # bound for response
 
@@ -194,7 +203,7 @@ class ResolventAnalysis(FreqencySolverBase):
 
         self._format_solution(s, vals, vecs)
 
-    def save(self, k, path):
+    def save(self, k, s, path):
         """
         Save the k-th singular mode as a time series.
         
@@ -205,6 +214,8 @@ class ResolventAnalysis(FreqencySolverBase):
         ----------
         k : int
             Index of the mode to save.
+        s : complex
+            The Laplace variable.
         path : str
             Directory path of the folder to save the mode.
         """
@@ -212,7 +223,7 @@ class ResolventAnalysis(FreqencySolverBase):
         force = self.force_mode[:, k]
         response = self.response_mode[:, k]
         # savepath = 'path/cylinder_mode(k)_Re(nu)_Omerga(omega)'
-        savepath = path + '/resolvent_mode_' + str(k) + 'th_Re' + str(self.eqn.Re).zfill(3) + '_s' + str(self.s)
+        savepath = path + '/resolvent_mode_' + str(k) + 'th_Re' + str(self.eqn.Re).zfill(3) + '_s' + str(s)
         timeseries_r = TimeSeries(savepath)
 
         # store the mode

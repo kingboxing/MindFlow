@@ -51,12 +51,13 @@ class FrequencyResponse(FreqencySolverBase):
         """
         param = self.param[self.param['solver_type']]
         self.LHS = self.pencil[0] + self.pencil[1].multiply(1j)
+        Mat = self.param['feedback_pencil']
         if self.element.dim > self.element.mesh.topology().dim():  #quasi-analysis
             self.LHS += self.pencil[2].multiply(1j)
 
         if param['method'] == 'lu':
             info(f"LU decomposition using {param['lusolver'].upper()} solver...")
-            self.Linv = InverseMatrixOperator(self.LHS, lusolver=param['lusolver'], echo=param['echo'])
+            self.Linv = InverseMatrixOperator(self.LHS, Mat=Mat, lusolver=param['lusolver'], echo=param['echo'])
             info('Done.')
 
         elif param['method'] == 'krylov':
@@ -117,7 +118,7 @@ class FrequencyResponse(FreqencySolverBase):
             ov = self._check_vec(output_vec).reshape(1, -1)  # Reshape to row vector
             return ov @ self.state  # Matrix multiplication (equivalent to * and np.matrix)
 
-    def solve(self, s=None, input_vec=None, output_vec=None, Re=None, Mat=None, sz=None):
+    def solve(self, s=None, input_vec=None, output_vec=None, Re=None, Mat=None, sz=None, reuse=False):
         """
         Solve the frequency response of the linearized Navier-Stokes system.
 
@@ -131,52 +132,33 @@ class FrequencyResponse(FreqencySolverBase):
             1-D output vector. Default is None.
         Re : float, optional
             Reynolds number. Default is None.
-        Mat : scipy.sparse matrix, optional
-            Feedback matrix (if control is applied). Default is None.
+        Mat : scipy.sparse matrix or dict with real matrices U, V, optional
+            Feedback matrix Mat = U * V'. Default is None.
         sz : complex or tuple/list of complex, optional
            Spatial frequency parameters for quasi-analysis of the flow field. Default is None.
+        reuse : bool, optional
+            Whether to reuse previous computations. Default is False.
 
         Returns
         -------
         None.
 
         """
+        param = self.param[self.param['solver_type']]
 
-        rebuild = False
-
-        if Re is not None and (self.eqn.Re is None or not np.allclose(self.eqn.Re, Re, atol=1e-12)):
-            # if not yet set Re or the current Re has a value different from the previous on
+        if Re is not None:
             self.eqn.Re = Re
-            rebuild = True
-        else:
-            # if Re is None, raise error
-            if self.eqn.Re is None:
-                raise ValueError('Please indicate a Reynolds number')
-            # else use previous Re (Re = None means reuse Reynolds number)
 
-        if s is not None and (not hasattr(self.eqn, 's') or not np.allclose(self.eqn.s, s, atol=1e-12)):
-            # if not yet set s or the current s has a value different from the previous one
-            rebuild = True
-        else:
-            # if s not yet set and the current one is None, raise error
-            if not hasattr(self.eqn, 's'):
-                raise ValueError('Please indicate value of the Laplace variable s')
-            # else use previous s (s = None means resue the value)
-
-        if Mat is not None and (
-                not hasattr(self, 'Mat') or self.Mat is None or not allclose_spmat(self.Mat, Mat, atol=1e-12)):
-            # if self.Mat doesn't exist (1st solve) or self.Mat (previous Mat) is not equal to current Mat
-            self.Mat = Mat
-            rebuild = True
-        else:
-            if not (hasattr(self, 'Mat') and self.Mat is None):
-                self.Mat = Mat
-                rebuild = True
-            #else: current Mat is None and the previous Mat is None (not 1st solve), do nothing; otherwise do above command
-
-        if rebuild:
+        if not reuse:
             self._form_LNS_equations(s, sz)
-            self._assemble_pencil(Mat)
+            if Mat is None or sp.issparse(Mat):
+                self._assemble_pencil(Mat=Mat, symmetry=param['symmetry'], BCpart=param['BCpart'])
+            elif isinstance(Mat, dict) and 'U' in Mat and 'V' in Mat:
+                self.param['feedback_pencil'] = Mat
+                self._assemble_pencil(Mat=None, symmetry=param['symmetry'], BCpart=param['BCpart'])
+            else:
+                raise ValueError(
+                    'Invalid Type of feedback matrix Mat (Can be a sparse matrix or a dict containing U and V).')
             self._initialize_solver()
 
         self.gain = self._solve_linear_system(input_vec, output_vec)

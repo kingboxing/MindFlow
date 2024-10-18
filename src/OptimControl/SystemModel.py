@@ -220,9 +220,9 @@ class StateSpaceDAE2(FreqencySolverBase):
 
         if not reuse:
             self._form_LNS_equations(1.0j, sz)
-            if not Mat or sp.issparse(Mat):
+            if Mat is None or sp.issparse(Mat):
                 self._assemble_pencil(Mat)
-            elif isinstance(Mat, dict):
+            elif isinstance(Mat, dict) and 'U' in Mat and 'V' in Mat:
                 self._assemble_pencil()
                 self.model.update({'U': -Mat['U'], 'V': Mat['V']})  # update Mat={'U': U, 'V':V}
             else:

@@ -74,6 +74,7 @@ class DefaultParameters:
         defaults_eigs.update(defaults_diff)
         defaults = {'solver_type': 'eigen_solver',
                     'eigen_solver': defaults_eigs,
+                    'feedback_pencil': None, # either None or a dict with U, V
                     }
 
         self.parameters['eigen_solver'] = defaults
@@ -82,18 +83,19 @@ class DefaultParameters:
         defaults = {'solver_type': 'frequency_response',
                     'frequency_response': {'method': 'lu',
                                            'lusolver': 'mumps',
-                                           'echo': False}
+                                           'echo': False,
+                                           'symmetry': True,
+                                           'BCpart': None},
+                    'feedback_pencil': None,
                     }
         self.parameters['frequency_response'] = defaults
 
     def _initialize_resolvent_defaults(self):
         defaults_eigs = copy.deepcopy(self.parameters['eigen_decompose'])
-        defaults_diff = {'symmetry': True,
-                         'BCpart': None
-                         }
-        defaults_eigs.update(defaults_diff)
+        defaults_eigs.update({'symmetry': True, 'BCpart': None})
         defaults = {'solver_type': 'resolvent_solver',
                     'resolvent_solver': defaults_eigs,
+                    'feedback_pencil': None,
                     }
         self.parameters['resolvent_solver'] = defaults
 
@@ -785,18 +787,3 @@ class Params:
                             'report': False
                             }
 
-
-class FreqOptions:
-    """
-    """
-
-    def __init__(self):
-        pass
-
-
-class ContOptions:
-    """
-    """
-
-    def __init__(self):
-        pass
