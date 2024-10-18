@@ -729,3 +729,58 @@ def woodbury_solver(U, V, b):
 
     x = b - U @ (np.linalg.inv(np.identity(k) + V.T @ U) @ V.T @ b)
     return x.flatten()
+
+
+import numpy as np
+
+
+def find_orthogonal_complement(A, U, M=None, tolerance=1e-6):
+    """
+    Gram-Schmidt orthogonalization
+    Find orthogonal basis that complements U and improves the representation of A,
+    with a given traction tolerance to filter out insignificant modes.
+    Note that U can be orthogonal with respect to the weight matrix M.
+
+    Parameters
+    ----------
+    A : numpy array of shape (n, k)
+        The matrix containing k modes.
+
+    U : numpy array of shape (n, l)
+        The initial orthogonal basis of l modes.
+
+    M : sparse matrix of shape (n, n)
+        The sparse weight matrix.
+
+    tolerance : float, optional
+        Traction tolerance for filtering insignificant modes based on singular values.
+
+    Returns
+    -------
+    new_basis : numpy array of shape (n, l + r_filtered)
+        The combined orthogonal basis, consisting of the original U and new basis vectors
+        from the residual, filtered by the traction tolerance.
+    """
+    if M is None:
+        M = sp.identity(A.shape[0])
+    # Step 1: Project A onto U
+    U_proj = np.linalg.inv(U.T @ M @ U) @ U.T  # normalised mode
+    A_proj = U @ (U_proj @ M @ A)  # represent A by U
+
+    # Step 2: Find the residual
+    R = A - A_proj
+
+    # Step 3: Perform SVD on the residual to find the orthogonal complement
+    # Form the eigenvalue problem (equivalent to SVD)
+    R_cov = R.T @ M @ R
+    eigvals, eigvecs = np.linalg.eigh(R_cov)  # Solve the eigenvalue problem
+    sig = np.diag(np.reciprocal(np.sqrt(eigvals)))
+
+    # Step 4: Apply the traction tolerance to filter out small singular values
+    significant_modes = np.sqrt(eigvals) > tolerance
+    U_hat_filtered = (R @ eigvecs @ sig)[:, significant_modes] # Keep only significant modes
+
+    # Step 5: Combine the original U with the filtered new orthogonal complement
+    new_basis = np.hstack((U, U_hat_filtered))
+
+    return new_basis
