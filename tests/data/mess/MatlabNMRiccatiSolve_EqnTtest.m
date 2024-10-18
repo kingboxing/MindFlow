@@ -37,7 +37,7 @@ opts.shifts.method      = 'projection';
 opts.nm.maxiter          = 20;
 opts.nm.res_tol          = 1e-10;
 opts.nm.rel_diff_tol     = 1e-16;
-opts.nm.info             = 1;
+opts.nm.info             = 0;
 opts.nm.projection.freq  = 0;
 opts.nm.projection.ortho = true;
 % in case you want to e.g. specify the factored Newton solver for

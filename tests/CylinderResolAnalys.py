@@ -56,6 +56,7 @@ solver.solve(k=2, s=0.7 * 1j, Re=Re)
 # print results
 print('Results are printed as follows : ')
 print(f'Re = {Re}\nEigenvalues = {solver.energy_amp}')
+# [5.02988768e+06 5.63146024e+02]
 #%%
 elapsed_time = time.time() - start_time
 cpu_usage_after = psutil.cpu_percent(interval=None, percpu=True)

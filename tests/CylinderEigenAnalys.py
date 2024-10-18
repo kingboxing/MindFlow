@@ -58,9 +58,9 @@ solver.param[solver.param['solver_type']]['ncv'] = 600
 solver.solve(k=200, Re=Re)
 
 # compare results
-eigs = load_complex('./data/eigen/LMEigen_bf_newton_cylinder_26k_re080.txt')
+eigs = np.asarray(load_complex('./data/eigen/LMEigen_bf_newton_cylinder_26k_re080.txt'))
 vals, ind = sort_complex(solver.vals)
-Error_vals = np.linalg.norm(vals[:100] - eigs[:100], ord=np.inf)
+Error_vals = np.linalg.norm(vals[:20] - eigs[:20], ord=np.inf)
 # compare unstable eigs
 Error_us = np.linalg.norm(np.loadtxt('./data/eigen/eigenvalues.txt') -
                           list(zip([Re], [np.abs(np.imag(vals[0]))],

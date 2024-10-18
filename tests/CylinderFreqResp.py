@@ -60,6 +60,7 @@ solver.solve(Re=Re, s=s, input_vec=input_vec, output_vec=output_vec)
 # print results
 print('Results are printed as follows : ')
 print(f'Re = {Re}    Gain = {solver.gain}')
+# Gain = [-0.07993415-1.42914379j]
 #%%
 elapsed_time = time.time() - start_time
 cpu_usage_after = psutil.cpu_percent(interval=None, percpu=True)
