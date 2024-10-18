@@ -1,42 +1,20 @@
 from context import *
-from src.LinAlg.Utils import woodbury_solver
+from src.LinAlg.Utils import find_orthogonal_complement
 
-Ar = sp.csr_matrix([[4, 1, 5], [1, 3, 2], [2, 1, 4]], dtype=np.float64)
-Ai = sp.csr_matrix([[0, -1, -2], [1, 0, 4], [-1, 3, 5]], dtype=np.float64)
-A = Ar + 1j * Ai
-vr = np.array([1, 3, 4], dtype=np.float64)
-vi = np.array([2, 4, 6], dtype=np.float64)
-v = vr + 1j * vi
 
-U = np.random.rand(3, 1) + np.random.rand(3, 1) * 1j
-V = np.random.rand(3, 1) + np.random.rand(3, 1) * 1j
-b = np.random.rand(3) + np.random.rand(3) * 1j
-I = np.identity(3)
+n, k, l = 1000, 10, 1
+A = np.random.rand(n, k)
+U = np.random.rand(n, l)
 
-Mat = {'U': U, 'V': V}
-trans = 'H'
+# Generate a sparse weight matrix M (n x n)
 
-# Initialize the MatInv solver with the complex matrix
-# This example uses the 'mumps' solver, which is a common choice for LU factorization.
-mat_inv = InverseMatrixOperator(A, Mat=Mat, lusolver='mumps', trans=trans)
+M = sp.diags(np.random.rand(n))
+U = U @ np.linalg.inv(np.sqrt(U.T @ M @ U))
 
-# Solve the system A*x = b
-x = mat_inv.matvec(b)
+# Set the traction tolerance to a desired value, e.g., 1e-4
+tolerance = 1e-4
 
-# Output the result
-print("Solution x:", x)
+# Find the new orthogonal basis with the sparse weight matrix M
+new_basis = find_orthogonal_complement(A, U, M, tolerance=tolerance)
 
-# Verify by computing A*x and comparing it with b
-if trans == 'N':
-    A_complex = A + U @ V.T
-    Ax = A_complex.dot(x)
-elif trans == 'T':
-    A_complex = A.T + U @ V.T
-    Ax = A_complex.dot(x)
-elif trans == 'H':
-    A_complex = A.T.conjugate() + U @ V.T
-    Ax = A_complex.dot(x)
-
-print("b=Ax:", Ax)
-print("Original b:", b)
-assert np.allclose(Ax, b, atol=1e-6), "Ax does not match the original b."
+print("Shape of new basis:", new_basis.shape)
