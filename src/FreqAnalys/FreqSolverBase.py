@@ -1,9 +1,59 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Wed Sep  4 17:07:07 2024
+This module provides the `FrequencySolverBase` class, which serves as a base class for performing frequency domain
+analysis on fluid flow problems using the finite element method with the FEniCS library.
 
-@author: bojin
+The class extends `NSolverBase` and is designed to handle the linearization of the Navier-Stokes equations around a
+base flow, assemble the system matrices (also known as the matrix pencil), and set up the necessary components for
+frequency response analysis, stability analysis, and control applications.
+
+Classes
+-------
+- FrequencySolverBase:
+    Base class for frequency domain solvers for linearized Navier-Stokes equations.
+
+Dependencies
+------------
+- FEniCS
+- NumPy
+- SciPy
+
+Ensure that all dependencies are installed and properly configured.
+
+Examples
+--------
+Typical usage involves subclassing `FrequencySolverBase` to implement specific frequency domain solvers for fluid flow problems.
+
+```python
+from FERePack.FreqAnalys.FreqSolverBase import FrequencySolverBase
+
+# Define mesh and parameters
+mesh = ...
+Re = 100.0
+
+# Initialize the frequency solver base
+solver = FrequencySolverBase(mesh, Re=Re, order=(2, 1), dim=2)
+
+# Set boundary conditions
+solver.set_boundary(bc_list)
+solver.set_boundarycondition(bc_list)
+
+# Set base flow
+solver.set_baseflow(ic=base_flow_function)
+
+# Form the linearized Navier-Stokes equations at a specific frequency
+s = 1j * omega  # Laplace variable for frequency omega
+solver._form_LNS_equations(s)
+
+# Assemble the system matrices (matrix pencil)
+solver._assemble_pencil()
+```
+
+Notes
+-------
+- This class is intended to be subclassed, with methods implemented to perform specific analyses such as frequency response computation, eigenvalue analysis, or control design.
+- The class handles the assembly of complex matrices representing the linearized system, taking into account boundary conditions and possible feedback terms.
 """
 
 from ..Deps import *
@@ -16,24 +66,66 @@ from ..LinAlg.MatrixOps import AssembleMatrix, AssembleVector, ConvertVector, Co
     TransposePETScMat, InverseMatrixOperator, SparseLUSolver
 from ..Params.Params import DefaultParameters
 
+
 #%%
 class FreqencySolverBase(NSolverBase):
+    """
+    Base class for frequency domain solvers for linearized Navier-Stokes equations.
+
+    This class sets up the necessary finite element spaces, boundary conditions, and equations for performing frequency domain analysis, such as frequency response and stability analysis, of incompressible fluid flows. It linearizes the Navier-Stokes equations around a given base flow and assembles the system matrices (matrix pencil) required for solving the linearized system in the frequency domain.
+
+    Parameters
+    ----------
+    mesh : dolfin.Mesh
+        The computational mesh of the flow domain.
+    Re : float, optional
+        The Reynolds number of the flow. Default is None.
+    order : tuple of int, optional
+        The polynomial orders of the finite element spaces for velocity and pressure, respectively. Default is (2, 1).
+    dim : int, optional
+        Dimension of the flow field. Default is 2.
+    constrained_domain : dolfin.SubDomain, optional
+        A constrained subdomain for applying periodic boundary conditions or other constraints. Default is None.
+
+    Attributes
+    ----------
+    element : object
+        The finite element object defining the function spaces.
+    boundary_condition : SetBoundaryCondition
+        Object for handling boundary conditions.
+    param : dict
+        Dictionary of solver parameters.
+
+    Methods
+    -------
+    set_baseflow(ic, timestamp=0.0)
+        Set the base flow around which the Navier-Stokes equations are linearized.
+    _form_LNS_equations(s, sz=None)
+        Formulate the linearized Navier-Stokes equations in the frequency domain.
+    _assemble_pencil(Mat=None, symmetry=False, BCpart=None)
+        Assemble the matrix pencil (system matrices) of the linearized system.
+
+    Notes
+    -----
+    - The class uses Taylor-Hood elements by default for the finite element discretization.
+    - Boundary conditions and base flow must be specified before assembling the system matrices.
+    """
     def __init__(self, mesh, Re=None, order=(2, 1), dim=2, constrained_domain=None):
         """
-        Initialize the FrequencyResponse solver.
+        Initialize the FrequencySolverBase.
 
         Parameters
         ----------
-        mesh : Mesh
-            The mesh of the flow field.
+        mesh : dolfin.Mesh
+            The computational mesh of the flow domain.
         Re : float, optional
-            Reynolds number. Default is None.
-        order : tuple, optional
-            Order of finite elements. Default is (2, 1).
+            The Reynolds number of the flow. Default is None.
+        order : tuple of int, optional
+            The polynomial orders of the finite element spaces for velocity and pressure, respectively. Default is (2, 1).
         dim : int, optional
             Dimension of the flow field. Default is 2.
-        constrained_domain : SubDomain, optional
-            Constrained domain defined in FEniCS (e.g., for periodic boundary conditions). Default is None.
+        constrained_domain : dolfin.SubDomain, optional
+            A constrained domain for applying periodic boundary conditions or other constraints. Default is None.
         """
 
         element = TaylorHood(mesh=mesh, order=order, dim=dim,
@@ -47,38 +139,47 @@ class FreqencySolverBase(NSolverBase):
 
     def set_baseflow(self, ic, timestamp=0.0):
         """
-        Set the base flow around which Navier-Stokes equations are linearized.
+        Set the base flow around which the Navier-Stokes equations are linearized.
 
         Parameters
         ----------
-        ic : str or Function
-            Path or FEniCS function stores the base flow.
+        ic : str or dolfin.Function
+            The initial condition representing the base flow. Can be a file path to stored data or a FEniCS function.
         timestamp : float, optional
-            Timestamp of the base flow saved in the time-series file if ic is a path. Default is 0.0.
+            The timestamp for retrieving the base flow from a time series file if `ic` is a file path. Default is 0.0.
 
         Returns
         -------
-        None.
+        None
 
+        Notes
+        -----
+        - The base flow is essential for linearizing the Navier-Stokes equations and must be set before forming the linearized equations.
         """
 
         SetInitialCondition(0, ic=ic, fw=self.eqn.fw[0], timestamp=timestamp)
 
     def _form_LNS_equations(self, s, sz=None):
         """
-        Form the UFL expression of a linearized Navier-Stokes system.
+        Formulate the linearized Navier-Stokes equations in the frequency domain.
+
+        This method assembles the UFL expressions representing the linearized Navier-Stokes equations around the base flow, including frequency-dependent terms.
 
         Parameters
         ----------
-        s : int, float, complex
-            The Laplace variable s, also known as the operator variable in the Laplace domain.
+        s : complex
+            The Laplace variable `s`, typically `s = sigma + i*omega`, where `omega` is the angular frequency.
         sz : complex or tuple/list of complex, optional
-            Spatial frequency parameters for quasi-analysis of the flow field. Default is None.
+            Spatial frequency parameters for quasi-analysis of the flow field (e.g., for three-dimensional perturbations in a two-dimensional base flow). Default is None.
 
         Returns
         -------
-        None.
+        None
 
+        Notes
+        -----
+        - The linearized equations are stored in `self.LNS` as UFL expressions.
+        - The method handles both standard linearization and quasi-analysis (if spatial frequencies `sz` are provided).
         """
         if self.element.dim == self.element.mesh.topology().dim():
             # form Steady Linearised Incompressible Navier-Stokes Equations
@@ -103,26 +204,38 @@ class FreqencySolverBase(NSolverBase):
             self.LNS = (leqn_r + feqn[0], feqn[1], leqn_i)
 
     def _assemble_pencil(self, Mat=None, symmetry=False, BCpart=None):
-
         """
-        Assemble the matrix pencil (sM+NS) of the linear system.
-        
+        Assemble the matrix pencil (system matrices sM+NS) of the linearized system.
+
         u=(sM+NS)^-1*f where RHS=f, Resp=u, sM = Ai, NS = Ar
-        
+
         Boundary Condition: u = value/0.0
-        
+
+        The method assembles the system matrices (also known as the matrix pencil) representing the linearized
+        Navier-Stokes equations in the frequency domain. It handles the application of boundary conditions and can
+        incorporate feedback matrices for control applications.
+
         Parameters
         ----------
         Mat : scipy.sparse matrix, optional
-            Feedback matrix (if control is applied: sM+NS+Mat). The default is None.
+            Feedback matrix to be added to the system matrix (e.g., for control applications: sM+NS+Mat). Default is None.
         symmetry : bool, optional
-            if assemble matrices in a symmetric fashion. The default is False.
-        BCpart : ‘r’ or ‘i’, optional
-            The homogenous boundary conditions are applied in the real (matrix NS) or imag (matrix M) part of system. The default is 'i'.
+            If True, assemble matrices in a symmetric fashion. Default is False.
+        BCpart : str, optional
+            Specifies where to apply homogeneous boundary conditions:
+            - 'r' : Apply to the real part of the system matrix (matrix NS).
+            - 'i' : Apply to the imaginary part of the system matrix (matrix M).
+            Default is None, which applies to the imaginary part.
+
         Returns
         -------
-        None.
+        None
 
+        Notes
+        -----
+        - The assembled matrices are stored in `self.pencil` as a tuple of sparse matrices.
+        - The matrices are converted to CSC (Compressed Sparse Column) format for efficient numerical operations.
+        - Boundary conditions are incorporated into the matrices by modifying the relevant rows and columns.
         """
         if symmetry:  # for homogeneous bcs, e.g. eigen analysis
             dummy_rhs = inner(Constant((0.0,) * self.eqn.dim), self.eqn.v) * dx

@@ -1,28 +1,101 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Wed Aug 28 18:48:11 2024
+This module provides a collection of utility functions for linear algebra operations, sparse matrix manipulations,
+eigenvalue computations, and working with FEniCS functions. These utilities are intended to assist in finite element
+simulations and numerical methods involving linear algebra.
 
-@author: bojin
+Functions
+---------
+- assign2(receiving_func, assigning_func):
+    Assign a NumPy array or another FEniCS function to a target FEniCS function.
+- allclose_spmat(A, B, tol=1e-12):
+    Check if two sparse matrices A and B are identical within a tolerance.
+- get_subspace_info(function_space):
+    Get the number of scalar subspaces under each top-level subspace in a given function space.
+- find_subspace_index(index, sub_spaces):
+    Find the top-level and sub-level subspace indices for a given scalar subspace index.
+- is_symmetric(m):
+    Check if a sparse matrix is symmetric.
+- del_zero_cols(mat):
+    Delete columns in a sparse matrix that have all elements equal to zero.
+- eigen_decompose(A, M=None, k=3, sigma=0.0, solver_params=None):
+    Perform eigenvalue decomposition on the system λ*M*x = A*x or A*x = λ*x.
+- sort_complex(a, tol=1e-8):
+    Sort a complex array based on the real part, then the imaginary part.
+- distribute_numbers(n, k):
+    Distribute n numbers into k groups as evenly as possible.
+- convert_to_2d(arr, axis=0):
+    Convert a 1D array to a 2D array.
+- save_complex(complex_list, filename):
+    Save a list of complex numbers to a text file.
+- load_complex(filename):
+    Load a list of complex numbers from a text file.
+- plot_spmat(sparse_matrix):
+    Plot the non-zero elements of a sparse matrix.
+- rmse(predictions, targets):
+    Compute the root-mean-square error between two arrays.
+- dict_deep_update(original, updates):
+    Recursively update a dictionary with another dictionary.
+- deep_set_attr(obj, attr):
+    Recursively set attributes on an object based on a nested dictionary.
+- assemble_sparse(blocks):
+    Assemble a sparse matrix from a list of block matrices.
+- assemble_dae2(model):
+    Assemble state-space matrices from block matrices for a DAE2 system.
+- is_diag_sparse(sparse_matrix):
+    Check if a sparse matrix is diagonal.
+- find_block_boundaries(sparse_matrix):
+    Find block boundaries in a sparse block diagonal matrix.
+- extract_diagonal_blocks(sparse_matrix):
+    Extract diagonal blocks from a sparse block diagonal matrix.
+- invert_dense_blocks(blocks):
+    Compute the inverse of each dense block matrix in a list.
+- assemble_diag_block_matrix(inverted_blocks):
+    Assemble inverted blocks into a sparse block diagonal matrix.
+- invert_diag_block_matrix(sparse_matrix, maxsize=3000):
+    Invert a sparse block diagonal matrix.
+- cholesky_sparse(sparse_matrix, maxsize=3000):
+    Compute the Cholesky decomposition of a sparse symmetric positive-definite matrix.
+- woodbury_solver(U, V, b):
+    Solve a linear system using the Woodbury matrix identity.
+- find_orthogonal_complement(A, U, M=None, tolerance=1e-6):
+    Find an orthogonal basis that complements U and improves the representation of A.
+
+Notes
+-----
+- Ensure that the required dependencies are installed, such as NumPy, SciPy, matplotlib, and FEniCS.
+- Some functions require specific formats for matrices (e.g., CSR or CSC sparse matrices).
 """
 from ..Deps import *
 
 
 def assign2(receiving_func, assigning_func):
     """
-    Assigns a NumPy array or another FEniCS function to a target FEniCS function.
+    Assign a NumPy array or another FEniCS function to a target FEniCS function.
 
     Parameters
     ----------
     receiving_func : function.function.Function
-        The recieving function. The target FEniCS function to which the values will be assigned.
+        The target FEniCS function to which the values will be assigned.
     assigning_func : np.ndarray, function.function.Function
-        The assigning function. The source of the values to be assigned. This can be either:
+        The source of the values to be assigned. This can be either:
           - A NumPy array with a size matching the number of DOFs in the target FEniCS function.
           - Another FEniCS function defined on the same function space.
 
-    Raises:
-    - ValueError: If the source type is not supported or the sizes do not match.
+    Raises
+    ------
+    ValueError
+        If the source type is not supported or the sizes do not match.
+
+    Notes
+    -----
+    This function facilitates the assignment of data to a FEniCS function, ensuring that the data aligns with the function space.
+
+    Examples
+    --------
+        assign2(u, np_array)
+        assign2(u, v)  # where u and v are FEniCS functions
 
     """
     if isinstance(assigning_func, np.ndarray):
@@ -45,12 +118,27 @@ def allclose_spmat(A, B, tol=1e-12):
     """
     Check if two sparse matrices A and B are identical within a tolerance.
 
-    Parameters:
-    - A, B: scipy.sparse matrices
-    - tol: tolerance value
+    Parameters
+    ----------
+    A : scipy.sparse matrix
+        The first sparse matrix.
+    B : scipy.sparse matrix
+        The second sparse matrix.
+    tol : float, optional
+        Tolerance value for the comparison. Default is 1e-12.
 
-    Returns:
-    - True if matrices are identical within the specified tolerance, otherwise False.
+    Returns
+    -------
+    bool
+        True if matrices are identical within the specified tolerance, otherwise False.
+
+    Notes
+    -----
+    This function computes the Frobenius norm of the difference between A and B and compares it with the tolerance.
+
+    Examples
+    --------
+         allclose_spmat(A, B, tol=1e-8)
     """
     if A.shape != B.shape:
         return False
@@ -67,19 +155,25 @@ def allclose_spmat(A, B, tol=1e-12):
 
 def get_subspace_info(function_space):
     """
-    Get the number of top-level sub-elements and the total number of scalar subspaces 
-    in a given two-level function space.
+    Get the number of scalar subspaces under each top-level subspace in a given function space.
 
     Parameters
     ----------
     function_space : FunctionSpace
-        DESCRIPTION.
+        The function space to analyze.
 
     Returns
     -------
     sub_spaces : tuple
-        The number of scalar subspaces under each subspace.
+        A tuple where each entry corresponds to the number of scalar subspaces in a top-level subspace.
 
+    Notes
+    -----
+    This function is useful for understanding the structure of mixed or vector function spaces.
+
+    Examples
+    --------
+         sub_spaces = get_subspace_info(mixed_space)
     """
     sub_spaces = ()
     num_sub_spaces = function_space.num_sub_spaces()
@@ -102,22 +196,25 @@ def find_subspace_index(index, sub_spaces):
     Parameters
     ----------
     index : int
-        The index of the scalar subspace (0-based index)..
+        The index of the scalar subspace (0-based index).
     sub_spaces : tuple
-        number scalar subspaces per top level subspace. 
-        A list where each entry corresponds to the number of scalar subspaces in a top-level subspace.
-        obtained from 'get_subspace_info(function_space)'
+        A tuple where each entry corresponds to the number of scalar subspaces in a top-level subspace.
+        Obtained from 'get_subspace_info(function_space)'.
+
+    Returns
+    -------
+    indices : tuple
+        A tuple with the top-level subspace index and the sub-level subspace index (both 0-based).
+        If the top-level subspace contains only one scalar subspace, only the top-level index is returned.
 
     Raises
     ------
     ValueError
-        Index out of bounds.
+        If the index is out of bounds.
 
-    Returns
-    -------
-    (top_level_index, sub_level_index) : tuple
-        A tuple with the top-level subspace index and the sub-level subspace index (both 0-based)..
-
+    Examples
+    --------
+        indices = find_subspace_index(3, sub_spaces)
     """
     cumulative_sum = 0
 
@@ -136,18 +233,27 @@ def find_subspace_index(index, sub_spaces):
 
 
 def is_symmetric(m):
-    """Check if a sparse matrix is symmetric
+    """
+    Check if a sparse matrix is symmetric.
 
     Parameters
     ----------
-    m : array or sparse matrix
-        A square matrix.
+    m : scipy.sparse matrix
+        A square sparse matrix.
 
     Returns
     -------
-    check : bool
-        The check result.
+    bool
+        True if the matrix is symmetric, False otherwise.
 
+    Raises
+    ------
+    ValueError
+        If the input matrix is not square.
+
+    Examples
+    --------
+        symmetric = is_symmetric(sparse_matrix)
     """
     if m.shape[0] != m.shape[1]:
         raise ValueError('m must be a square matrix')
@@ -181,55 +287,68 @@ def is_symmetric(m):
 
 def del_zero_cols(mat):
     """
-    Deletes columns in a sparse matrix with all elements equal to zero
+    Delete columns in a sparse matrix that have all elements equal to zero.
 
     Parameters
     ----------
-    mat : scipy.sparse.csr_matrix/csc_matrix
-        DESCRIPTION.
+    mat : scipy.sparse matrix
+        The sparse matrix (CSR or CSC format) from which zero columns will be removed.
 
     Returns
     -------
-    TYPE
-        DESCRIPTION.
+    scipy.sparse matrix
+        The sparse matrix with zero columns removed.
 
+    Examples
+    --------
+        mat_nonzero = del_zero_cols(mat)
     """
     return mat[:, mat.nonzero()[1]]
 
 
-def eigen_decompose(A, M=None, k=3, sigma=0.0, solver_params=None):
+def eigen_decompose(A, M=None, k=3, sigma=0.0, solver_params=None, Mat=None):
     """
-    Perform eigen-decomposition on the system: λ*M*x = A*x or A*x = λ*x.
+    Perform eigenvalue decomposition on the system λ*M*x = A*x or A*x = λ*x.
 
     Parameters
     ----------
     A : scipy.sparse matrix
-        State matrix.
+        The system matrix.
     M : scipy.sparse matrix, optional
-        Mass matrix. If None, A*x = λ*x is solved.
+        The mass matrix. If None, the eigenvalue problem A*x = λ*x is solved.
     k : int, optional
         Number of eigenvalues to compute. Default is 3.
     sigma : float, optional
         Shift-invert parameter. Default is 0.0.
     solver_params : dict, optional
         Parameters for the eigenvalue solver, including:
-        - method: str (e.g., 'lu')
-        - lusolver: str (e.g., 'mumps')
-        - echo: bool (default False)
-        - which: str (default 'LM')
-        - v0: numpy array (default None)
-        - ncv: int (default None)
-        - maxiter: int (default None)
-        - tol: float (default 0)
-        - return_eigenvectors: bool (default True)
-        - OPpart: None or str (default None)
+            - method: str (e.g., 'lu')
+            - lusolver: str (e.g., 'mumps')
+            - echo: bool (default False)
+            - which: str (default 'LM')
+            - v0: numpy array (default None)
+            - ncv: int (default None)
+            - maxiter: int (default None)
+            - tol: float (default 0)
+            - return_eigenvectors: bool (default True)
+            - OPpart: None or str (default None)
+    Mat : scipy.sparse matrix or dict with keys 'U' and 'V', optional, pending
+        Feedback matrix `Mat = U * V.T`. Can be provided as a sparse matrix or a dictionary containing 'U' and 'V'. Default is None.
 
     Returns
     -------
-    vals : numpy array
-        Eigenvalues.
-    vecs : numpy array
-        Eigenvectors.
+    vals : numpy.ndarray
+        Array of computed eigenvalues.
+    vecs : numpy.ndarray
+        Array of computed eigenvectors.
+
+    Notes
+    -----
+    This function leverages scipy's sparse eigenvalue solvers and supports shift-invert mode.
+
+    Examples
+    --------
+        vals, vecs = eigen_decompose(A, M, k=5, sigma=0.1)
     """
     # import functions
     from ..Params.Params import DefaultParameters
@@ -265,18 +384,24 @@ def eigen_decompose(A, M=None, k=3, sigma=0.0, solver_params=None):
 def sort_complex(a, tol=1e-8):
     """
     Sort a complex array based on the real part, then the imaginary part.
-    
-    Parameters:
+
+    Parameters
+    ----------
     a : array_like
         Input complex array to be sorted.
     tol : float, optional
-        Precision of array's real part to sort. The default is 1e-8.
-        
-    Returns:
-    sorted_array : ndarray
+        Precision of array's real part to sort. Default is 1e-8.
+
+    Returns
+    -------
+    sorted_array : numpy.ndarray
         The input array sorted in descending order, first by real part, then by imaginary part.
-    index_sort : ndarray
+    index_sort : numpy.ndarray
         Indices that sort the original array in descending order.
+
+    Examples
+    --------
+        sorted_array, index_sort = sort_complex(complex_array)
     """
     # Get the indices that would sort the array based on real part and then imaginary part
     atol = np.round(a.real, int(np.abs(np.log10(tol)))) + 1j * a.imag
@@ -291,16 +416,22 @@ def sort_complex(a, tol=1e-8):
 def distribute_numbers(n, k):
     """
     Distribute n numbers into k groups as evenly as possible.
-    
-    Parameters:
+
+    Parameters
+    ----------
     n : int
         The total number of elements to distribute.
     k : int
         The number of groups.
-        
-    Returns:
+
+    Returns
+    -------
     list of int
         A list where each element represents the number of elements in that group.
+
+    Examples
+    --------
+        distribution = distribute_numbers(10, 3)
     """
     # Base size of each group
     base_size = n // k
@@ -316,16 +447,25 @@ def distribute_numbers(n, k):
 
 def convert_to_2d(arr, axis=0):
     """
-    Check if an array is 1-dimensional, and if yes, convert it to 2D.
-    
-    Parameters:
+    Convert a 1D array to a 2D array.
+
+    Parameters
+    ----------
     arr : array_like
         Input array to check and potentially convert.
-    axis : int
-        the axis to expand.
-    Returns:
-    ndarray
+    axis : int, optional
+        The axis along which to expand the dimensions. Default is 0.
+
+    Returns
+    -------
+    numpy.ndarray
         A 2D version of the input array.
+
+    Examples
+    --------
+        arr_2d = convert_to_2d(arr, axis=1)
+
+    Check if an array is 1-dimensional, and if yes, convert it to 2D.
     """
     arr = np.asarray(arr)  # Ensure input is a NumPy array
 
@@ -338,12 +478,17 @@ def convert_to_2d(arr, axis=0):
 def save_complex(complex_list, filename):
     """
     Save a list of complex numbers to a text file.
-    
-    Parameters:
+
+    Parameters
+    ----------
     complex_list : list of complex
         List of complex numbers to store.
     filename : str
         Name of the file to write to.
+
+    Examples
+    --------
+        save_complex(eigenvalues, 'eigenvalues.txt')
     """
     with open(filename, 'w') as file:
         for num in complex_list:
@@ -354,14 +499,20 @@ def save_complex(complex_list, filename):
 def load_complex(filename):
     """
     Load a list of complex numbers from a text file.
-    
-    Parameters:
+
+    Parameters
+    ----------
     filename : str
         Name of the file to read from.
-        
-    Returns:
+
+    Returns
+    -------
     list of complex
         List of complex numbers.
+
+    Examples
+    --------
+        complex_list = load_complex('eigenvalues.txt')
     """
     complex_list = []
     with open(filename, 'r') as file:
@@ -374,10 +525,15 @@ def load_complex(filename):
 def plot_spmat(sparse_matrix):
     """
     Plot the non-zero elements of a scipy sparse matrix.
-    
-    Parameters:
-    sparse_matrix : scipy.sparse.csr_matrix
+
+    Parameters
+    ----------
+    sparse_matrix : scipy.sparse matrix
         The sparse matrix to plot.
+
+    Examples
+    --------
+        plot_spmat(A)
     """
     # Convert the sparse matrix to COO format for easy access to row, col, and data
     sparse_coo = sparse_matrix.tocoo()
@@ -395,18 +551,23 @@ def plot_spmat(sparse_matrix):
 
 def rmse(predictions, targets):
     """
-    Root-mean-square deviation between two arrays
+    Compute the root-mean-square error between two arrays.
 
     Parameters
-    ----------------------------
-    predictions : Predicted array
-
-    targets : Obtained array
+    ----------
+    predictions : array_like
+        Predicted values.
+    targets : array_like
+        True values.
 
     Returns
-    ----------------------------
-    Root-mean-square deviation
+    -------
+    float
+        The root-mean-square error.
 
+    Examples
+    --------
+        error = rmse(predicted_values, true_values)
     """
     return np.sqrt(((predictions - targets) ** 2).mean())
 
@@ -415,12 +576,21 @@ def dict_deep_update(original, updates):
     """
     Recursively update the original dictionary with the updates dictionary.
 
-    Parameters:
-    original (dict): The original dictionary to be updated.
-    updates (dict): The updates to apply.
+    Parameters
+    ----------
+    original : dict
+        The original dictionary to be updated.
+    updates : dict
+        The updates to apply.
 
-    Returns:
-    dict: The updated dictionary.
+    Returns
+    -------
+    dict
+        The updated dictionary.
+
+    Examples
+    --------
+        updated_dict = dict_deep_update(original_dict, updates_dict)
     """
     for key, value in updates.items():
         if isinstance(value, dict) and key in original and isinstance(original[key], dict):
@@ -436,9 +606,16 @@ def deep_set_attr(obj, attr):
     """
     Recursively set attributes on an object based on a nested dictionary.
 
-    Parameters:
-    - obj: The object on which attributes will be set.
-    - attributes: A dictionary representing the attributes and their values. Nested dictionaries represent nested attributes.
+    Parameters
+    ----------
+    obj : object
+        The object on which attributes will be set.
+    attr : dict
+        A dictionary representing the attributes and their values. Nested dictionaries represent nested attributes.
+
+    Examples
+    --------
+        deep_set_attr(my_object, {'a': 1, 'b': {'c': 2}})
     """
     for key, value in attr.items():
         if isinstance(value, dict):
@@ -457,13 +634,20 @@ def assemble_sparse(blocks):
     """
     Assemble a sparse matrix from a list of block matrices.
 
-    Parameters:
-    - blocks: A 2D list of block matrices (either sparse or dense).
-              Each row in the list represents a row of block matrices.
-              Use None for empty blocks.
+    Parameters
+    ----------
+    blocks : list of lists
+        A 2D list of block matrices (either sparse or dense). Each row in the list represents a row of block matrices.
+        Use None for empty blocks.
 
-    Returns:
-    - A single assembled sparse matrix.
+    Returns
+    -------
+    scipy.sparse matrix
+        A single assembled sparse matrix.
+
+    Examples
+    --------
+        A_full = assemble_sparse([[A, B], [C, None]])
     """
     # Convert any dense NumPy arrays in the blocks to sparse format
     sparse_blocks = [[sp.csr_matrix(block) if block is not None and not sp.issparse(block) else block
@@ -480,19 +664,26 @@ def assemble_dae2(model):
     """
     Assemble state-space matrices from block matrices for a DAE2 system.
 
-    Mass = E_full = | M   0 |      State = A_full = | A   G  |
-                    | 0   0 |                       | G.T Z=0|
+    Parameters
+    ----------
+    model : dict
+        A dictionary containing the following keys:
+            - 'A': The system matrix.
+            - 'G': The coupling matrix.
+            - 'M': The mass matrix.
+            Mass = E_full = | M   0 |      State = A_full = | A   G  |
+                            | 0   0 |                       | G.T Z=0|
 
-    Parameters:
-    - model: A dictionary containing the following keys:
-      - 'A': The system matrix.
-      - 'G': The coupling matrix.
-      - 'M': The mass matrix.
+    Returns
+    -------
+    A_full : scipy.sparse matrix
+        The assembled state matrix.
+    E_full : scipy.sparse matrix
+        The assembled mass matrix.
 
-    Returns:
-    - A tuple (A_full, E_full) where:
-      - A_full: The assembled state matrix.
-      - E_full: The assembled mass matrix.
+    Examples
+    --------
+        A_full, E_full = assemble_dae2(model)
     """
     # Get the dimensions of G
     n = model['G'].shape[1]
@@ -516,11 +707,19 @@ def is_diag_sparse(sparse_matrix):
     """
     Check if a sparse matrix is a diagonal matrix.
 
-    Parameters:
-    - sparse_matrix: A scipy sparse matrix.
+    Parameters
+    ----------
+    sparse_matrix : scipy.sparse matrix
+        The sparse matrix to check.
 
-    Returns:
-    - True if the matrix is diagonal, False otherwise.
+    Returns
+    -------
+    bool
+        True if the matrix is diagonal, False otherwise.
+
+    Examples
+    --------
+        is_diagonal = is_diag_sparse(sparse_matrix)
     """
     # Convert the matrix to COO format (for efficient access to non-zero elements)
     coo_matrix = sparse_matrix.tocoo()
@@ -533,11 +732,19 @@ def find_block_boundaries(sparse_matrix):
     """
     Find the block boundaries in a sparse block diagonal matrix based on the index pattern of non-zero elements.
 
-    Parameters:
-    - sparse_matrix: A sparse matrix in CSR format.
+    Parameters
+    ----------
+    sparse_matrix : scipy.sparse matrix
+        The sparse matrix (CSR format) to analyze.
 
-    Returns:
-    - block_boundaries: A list of indices indicating where the blocks start and end.
+    Returns
+    -------
+    block_boundaries : list of int
+        A list of indices indicating where the blocks start and end.
+
+    Examples
+    --------
+        boundaries = find_block_boundaries(sparse_matrix)
     """
     if not sp.isspmatrix_csr(sparse_matrix):
         sparse_matrix = sparse_matrix.tocsr()
@@ -564,11 +771,19 @@ def extract_diagonal_blocks(sparse_matrix):
     """
     Extract diagonal blocks from a sparse block diagonal matrix based on its non-zero pattern.
 
-    Parameters:
-    - sparse_matrix: A sparse matrix (CSR format) with a block diagonal structure.
+    Parameters
+    ----------
+    sparse_matrix : scipy.sparse matrix
+        The sparse matrix (CSR format) with a block diagonal structure.
 
-    Returns:
-    - blocks: A list of dense matrices representing the diagonal blocks.
+    Returns
+    -------
+    blocks : list of numpy.ndarray
+        A list of dense matrices representing the diagonal blocks.
+
+    Examples
+    --------
+        blocks = extract_diagonal_blocks(sparse_matrix)
     """
     # Ensure the matrix is in CSR format for efficient row-wise operations
     if not sp.isspmatrix_csr(sparse_matrix):
@@ -594,11 +809,19 @@ def invert_dense_blocks(blocks):
     """
     Compute the inverse of each dense block matrix in the list.
 
-    Parameters:
-    - blocks: A list of dense matrices.
+    Parameters
+    ----------
+    blocks : list of numpy.ndarray
+        A list of dense matrices.
 
-    Returns:
-    - inverted_blocks: A list of inverted dense matrices.
+    Returns
+    -------
+    inverted_blocks : list of numpy.ndarray
+        A list of inverted dense matrices.
+
+    Examples
+    --------
+        inverted_blocks = invert_dense_blocks(blocks)
     """
     inverted_blocks = []
     for block in blocks:
@@ -612,11 +835,19 @@ def assemble_diag_block_matrix(inverted_blocks):
     """
     Assemble the inverted blocks into a sparse block diagonal matrix.
 
-    Parameters:
-    - inverted_blocks: A list of inverted dense matrices.
+    Parameters
+    ----------
+    inverted_blocks : list of numpy.ndarray
+        A list of inverted dense matrices.
 
-    Returns:
-    - A sparse matrix with the inverted blocks on its diagonal.
+    Returns
+    -------
+    scipy.sparse matrix
+        A sparse matrix with the inverted blocks on its diagonal.
+
+    Examples
+    --------
+        inv_sparse_matrix = assemble_diag_block_matrix(inverted_blocks)
     """
     # Use scipy.sparse.block_diag to create a block diagonal sparse matrix
     sparse_block_diag = sp.block_diag(inverted_blocks)
@@ -625,15 +856,26 @@ def assemble_diag_block_matrix(inverted_blocks):
 
 def invert_diag_block_matrix(sparse_matrix, maxsize=3000):
     """
-    Extract diagonal blocks from a sparse block diagonal matrix, compute the inverse of each block,
+    Invert a sparse block diagonal matrix.
+
+    The function extract diagonal blocks from a sparse block diagonal matrix, compute the inverse of each block,
     and assemble the inverted blocks into a sparse block diagonal matrix.
 
-    Parameters:
-    - sparse_matrix: A sparse matrix (CSR format) with a block diagonal structure.
-    - maxsize: The maximum size of the block diagonal matrix will be operated in a dense format.
+    Parameters
+    ----------
+    sparse_matrix : scipy.sparse matrix
+        The sparse matrix (CSR format) with a block diagonal structure.
+    maxsize : int, optional
+        The maximum size for dense inversion. Default is 3000.
 
-    Returns:
-    - sparse_inverted_block_matrix: A sparse/dense matrix with the inverted blocks on its diagonal.
+    Returns
+    -------
+    scipy.sparse matrix or numpy.ndarray
+        The inverted matrix.
+
+    Examples
+    --------
+        inv_matrix = invert_diag_block_matrix(sparse_matrix)
     """
     if not sp.issparse(sparse_matrix):
         sparse_matrix = sp.csr_matrix(sparse_matrix)
@@ -655,14 +897,28 @@ def invert_diag_block_matrix(sparse_matrix, maxsize=3000):
 
 def cholesky_sparse(sparse_matrix, maxsize=3000):
     """
-    Compute the cholesky decomposition A = L * L' of a sparse symmetric, positive-definite matrix
+    Compute the Cholesky decomposition A = L * L' of a sparse symmetric positive-definite matrix.
 
-    Parameters:
-    - sparse_matrix: A diagonal sparse matrix in CSR or CSC format.
-    - maxsize: The maximum size of the block diagonal matrix will be operated in a dense format.
+    Parameters
+    ----------
+    sparse_matrix : scipy.sparse matrix
+        The sparse symmetric positive-definite matrix.
+    maxsize : int, optional
+        The maximum size for dense decomposition. Default is 3000.
 
-    Returns:
-    - sparse_matrix_inv: The cholesky decomposition factor L of the input sparse matrix.
+    Returns
+    -------
+    scipy.sparse matrix or numpy.ndarray
+        The Cholesky factor of the input matrix.
+
+    Raises
+    ------
+    ValueError
+        If the matrix is not symmetric positive-definite.
+
+    Examples
+    --------
+        L = cholesky_sparse(sparse_matrix)
     """
     # Ensure the matrix is sparse and in CSC format
     if not sp.issparse(sparse_matrix):
@@ -693,24 +949,31 @@ def woodbury_solver(U, V, b):
     """
     Solve the system (I + U * V^T) x = b using the Woodbury matrix identity.
 
-    The Woodbury identity is:
+    The Woodbury formula is:
     (I + U * V^T)^-1 = I - U * (I + V^T * U)^-1 * V^T
 
     Parameters
     ----------
-    U : numpy array of shape (n, k)
-        Matrix U in the Woodbury identity.
-
-    V : numpy array of shape (n, k)
-        Matrix V in the Woodbury identity.
-
-    b : numpy array of shape (n,) or (n, 1)
-        Right-hand side vector or matrix for the system.
+    U : numpy.ndarray
+        Matrix U in the Woodbury identity (shape (n, k)).
+    V : numpy.ndarray
+        Matrix V in the Woodbury identity (shape (n, k)).
+    b : numpy.ndarray
+        Right-hand side vector or matrix for the system (shape (n,) or (n, 1)).
 
     Returns
     -------
-    x : numpy array of shape (n,)
+    x : numpy.ndarray
         The solution to the system (I + U * V^T) x = b.
+
+    Raises
+    ------
+    ValueError
+        If the shapes of U, V, and b are incompatible.
+
+    Examples
+    --------
+        x = woodbury_solver(U, V, b)
     """
     n, k = U.shape
 
@@ -736,30 +999,31 @@ import numpy as np
 
 def find_orthogonal_complement(A, U, M=None, tolerance=1e-6):
     """
-    Gram-Schmidt orthogonalization
-    Find orthogonal basis that complements U and improves the representation of A,
-    with a given traction tolerance to filter out insignificant modes.
+    Find an orthogonal basis that complements U and improves the representation of A.
+    A truncation tolerance is given to filter out insignificant modes.
     Note that U can be orthogonal with respect to the weight matrix M.
+
+    Similar to Gram-Schmidt orthogonalization
 
     Parameters
     ----------
-    A : numpy array of shape (n, k)
-        The matrix containing k modes.
-
-    U : numpy array of shape (n, l)
-        The initial orthogonal basis of l modes.
-
-    M : sparse matrix of shape (n, n)
-        The sparse weight matrix.
-
+    A : numpy.ndarray
+        The matrix containing k modes (shape (n, k)).
+    U : numpy.ndarray
+        The initial orthogonal basis of l modes (shape (n, l)).
+    M : scipy.sparse matrix, optional
+        The sparse weight matrix. If None, the identity matrix is used.
     tolerance : float, optional
         Relative truncation tolerance for filtering insignificant modes based on singular values.
 
     Returns
     -------
-    new_basis : numpy array of shape (n, l + r_filtered)
-        The combined orthogonal basis, consisting of the original U and new basis vectors
-        from the residual, filtered by the traction tolerance.
+    new_basis : numpy.ndarray of shape (n, l + r_filtered)
+        The combined orthogonal basis, consisting of the original U and new basis vectors.
+
+    Examples
+    --------
+        new_basis = find_orthogonal_complement(A, U, tolerance=1e-5)
     """
     if M is None:
         M = sp.identity(A.shape[0])

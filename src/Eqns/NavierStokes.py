@@ -1,9 +1,35 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Wed Oct 18 17:07:48 2023
+This module provides classes for defining various forms of the incompressible Navier-Stokes equations,
+suitable for finite element simulations using FEniCS. It includes support for steady and transient
+problems, linearization, and various formulations such as frequency-domain and quasi-steady analyses.
 
-@author: bojin
+Classes
+-------
+- Incompressible: Class for defining incompressible Navier-Stokes equations.
+- Compressible: Placeholder class for future implementation of compressible Navier-Stokes equations.
+
+Examples
+--------
+To use the `Incompressible` class in a simulation:
+
+    from FERePack.Eqns import Incompressible
+    from FERePack.BasicFunc import TaylorHood, SetBoundary
+    from dolfin import Mesh
+
+    # Define mesh and finite element
+    mesh = Mesh("mesh.xml")
+    element = TaylorHood(mesh)
+
+    # Define boundary conditions
+    boundary = SetBoundary(mesh, element)
+
+    # Initialize the incompressible Navier-Stokes equations
+    ns_eqn = Incompressible(element, boundary, Re=100)
+
+    # Get the steady nonlinear Navier-Stokes form
+    NS_form = ns_eqn.SteadyNonlinear()
 """
 
 from ..Deps import *
@@ -11,25 +37,94 @@ from ..Deps import *
 
 class Incompressible:
     """
-    Class for defining various forms of the incompressible Navier-Stokes equations.
+    Class for defining various forms of the incompressible Navier-Stokes equations for use in
+    finite element simulations with FEniCS.
+
+    Attributes
+    ----------
+    element : object
+        Finite element object defining the solution space (e.g., TaylorHood element).
+    dim : int
+        Dimension of the flow field.
+    rho : float
+        Density of the fluid (fixed at 1.0 for incompressible flows).
+    Re : float
+        Reynolds number.
+    ds : Measure
+        Boundary measure for integration over boundaries.
+    n : FacetNormal
+        Outward pointing normal vector on the boundary.
+    u : Function
+        Velocity field function.
+    p : Function
+        Pressure field function.
+    w : Function
+        Combined function of velocity and pressure.
+    fw : tuple of Functions
+        Tuple containing functions at various time steps (e.g., current, previous).
+    fu : tuple of Functions
+        Tuple containing velocity functions at various time steps.
+    fp : tuple of Functions
+        Tuple containing pressure functions at various time steps.
+    v : TestFunction
+        Test function for velocity.
+    q : TestFunction
+        Test function for pressure.
+    tu : TrialFunction
+        Trial function for velocity.
+    tp : TrialFunction
+        Trial function for pressure.
+    const_expr : Expression or Function
+        Time-invariant source term for the flow field.
+    time_expr : Expression or Function
+        Time-dependent source term for the flow field.
+    nu : Constant
+        Kinematic viscosity (computed as 1/Re).
+
+    Methods
+    -------
+    SteadyNonlinear()
+        Define the steady nonlinear Navier-Stokes equations in weak form.
+    SteadyLinear()
+        Define the steady linearized Navier-Stokes equations in weak form.
+    QuasiSteadyLinear(sz)
+        Define the quasi-steady linearized Navier-Stokes equations for dimension reduction.
+    Frequency(s)
+        Define the transient part of the frequency-domain Navier-Stokes equations.
+    Transient(dt, scheme="backward", order=1, implicit=True)
+        Define the transient part using a time discretization scheme.
+    IPCS(dt)
+        Define the Implicit Pressure Correction Scheme (IPCS) for transient Navier-Stokes equations.
+    SourceTerm()
+        Define the external source term for the Navier-Stokes equations.
+    BoundaryTraction(p, u, nu, mark=None, mode=None)
+        Define the boundary traction term for the Navier-Stokes equations.
+    epsilon(u)
+        Compute the symmetric gradient of the velocity field.
+    sigma(nu, u, p)
+        Compute the stress tensor for the Navier-Stokes equations.
+    force_expr()
+        Define the expressions for computing forces (e.g., lift and drag).
+    vorticity_expr()
+        Define the expression for computing vorticity.
     """
 
     def __init__(self, element, boundary, Re, const_expr=None, time_expr=None):
         """
-        Initialize the incompressible Navier-Stokes solver.
+        Initialize the incompressible Navier-Stokes equations.
 
         Parameters
         ----------
         element : object
-            Finite element object defining the solution space.
-        boundary : object
-            SetBoundary object.
+            Finite element object defining the solution space (e.g., instance of TaylorHood).
+        boundary : SetBoundary
+            Boundary object containing boundary definitions and measures.
         Re : float
-            Reynolds number.
-        const_expr : Expression, Function or Constant, optional
-            The time-invariant source term for the flow field. Default is None.
-        time_expr : Expression, Function or Constant, optional
-            Time-dependent source term for the flow field. Default is None.
+            Reynolds number, representing the ratio of inertial forces to viscous forces.
+        const_expr : Expression, Function, or Constant, optional
+            Time-invariant source term (e.g., body force). Default is None.
+        time_expr : Expression, Function, or Constant, optional
+            Time-dependent source term (e.g., transient forcing). Default is None.
         """
 
         self.element = element
@@ -44,31 +139,36 @@ class Incompressible:
 
     def _initialize_functions(self, element):
         """
-        Initialize function aliases for the finite element problem.
+        Initialize function aliases and tuples for the finite element problem.
 
         Parameters
         ----------
         element : object
             Finite element object.
         """
+        # Solution functions
+        self.u = element.u  # Velocity function
+        self.p = element.p  # Pressure function
+        self.w = element.w  # Mixed/Combined function (velocity and pressure)
+        self.fw = (self.w,)  # Tuple of solution functions at various time steps
+        self.fu = (self.u,)  # Tuple of velocity functions at various time steps
+        self.fp = (self.p,)  # Tuple of pressure functions at various time steps
 
-        # solved function
-        self.u = element.u
-        self.p = element.p
-        self.w = element.w
-        self.fw = (self.w,)
-        self.fu = (self.u,)
-        self.fp = (self.p,)
-        # test function
-        self.v = element.v
-        self.q = element.q
-        # trial function for linear problems
-        self.tu = element.tu
-        self.tp = element.tp
+        # Test functions
+        self.v = element.v  # Test function for velocity
+        self.q = element.q  # Test function for pressure
+
+        # Trial functions (used in linearized problems)
+        self.tu = element.tu  # Trial function for velocity
+        self.tp = element.tp  # Trial function for pressure
 
     def _add_temporary_functions(self, num=1):
         """
-        Add temporary functions for storing results from previous steps.
+        Add temporary functions for storing results from previous time steps.
+
+        This method is used in transient simulations to keep track of solution
+        variables at previous time levels.
+
         self.fw[0]---> time step n+1 (element.w -> current time step)
 
         Parameters
@@ -102,25 +202,24 @@ class Incompressible:
     def SteadyNonlinear(self):  ## no trial functions
         """
         Define the steady nonlinear Navier-Stokes equations in weak form.
-        
-        au                  1  
-        -- + u * grad(u) + --- grad(p) - nu * laplacian(u) - F = 0 
-        at                 rho
-        
-        div(u)=0
-        
-        where u is a vector, p is scalar, 
-        rho is density ( = 1 here), nu is kinematic viscosity, 
-        s is the source term, f is the body force 
-        
-        au/at = 0 here for steady flows
+
+        The equations are defined as:
+
+            (u ⋅ ∇)u + ∇p / ρ - ν Δu = F
+
+            ∇ ⋅ u = 0
+
+        where:
+        - u is the velocity vector.
+        - p is the pressure scalar.
+        - ρ is the density (fixed at 1 for incompressible flows).
+        - ν is the kinematic viscosity (ν = nu = 1/Re).
+        - F is the external force (source term).
         
         Returns
         -------
-        NS : UFL expression
-            The steady nonlinear Navier-Stokes equations in the weak form.
-        F : UFL expression
-            The external force/source term.
+        NS : UFL Form
+            The weak form of the steady nonlinear Navier-Stokes equations.
         """
 
         self.nu = Constant(1.0 / self.Re)
@@ -138,10 +237,12 @@ class Incompressible:
         """
         Define the steady linearized Navier-Stokes equations in weak form.
 
+        Linearization is performed around a base flow field u.
+
         Returns
         -------
-        SLNS : UFL expression
-            The steady linearized Navier-Stokes equations.
+        SLNS : UFL Form
+            The weak form of the steady linearized Navier-Stokes equations.
         """
 
         # self.u represents base flow field
@@ -156,7 +257,10 @@ class Incompressible:
 
     def QuasiSteadyLinear(self, sz):
         """
-        Define the steady linearized Navier-Stokes equations of Quasi-dimension in weak form.
+        Define the quasi-steady linearized Navier-Stokes equations for dimension reduction.
+
+        This method is used for analyzing flows where one spatial dimension can be
+        represented using a harmonic function (e.g., for 2.5D or 1.5D flows).
         
         U(x, y, z, t) = U(x, y) e^{iwt} e^{ikt}
         
@@ -169,12 +273,23 @@ class Incompressible:
 
         Parameters
         ----------
-        sz : complex or tuple/list of complex with only imaginary part, optional
-            Spatial frequency parameters for quasi-analysis of the flow field. Default is None.
+        sz : complex or tuple/list of complex
+            Spatial frequency parameter(s) with only imaginary parts (e.g., sz = i * k) for quasi-analysis of the
+            flow field. Default is None..
 
         Returns
         -------
-        None.
+        QSLNS_r : UFL Form
+            The real part of the quasi-steady linearized Navier-Stokes equations.
+        QSLNS_i : UFL Form
+            The imaginary part of the quasi-steady linearized Navier-Stokes equations.
+
+        Raises
+        ------
+        ValueError
+            If the maximum dimension reduction is exceeded.
+        TypeError
+            If sz is not a complex number or a list/tuple of complex numbers.
 
         """
         # self.nu = Constant(1.0/self.Re)
@@ -206,9 +321,9 @@ class Incompressible:
         if isinstance(sz, (complex, np.complexfloating)):  # 3D/2d -> 2D/1D
             sz = (sz,)
         elif isinstance(sz, (tuple, list)) and len(sz) > 1:  # pending for two
-            raise ValueError('The maximum dimension reduction is limited to one.')
+            raise ValueError('Maximum dimension reduction is limited to one.')
         else:
-            raise TypeError('Invalid type of Spatial frequency parameters for quasi-analysis.')
+            raise TypeError('Invalid type for spatial frequency parameters')
 
         QSLNS_i = 0
         QSLNS_r = 0
@@ -251,19 +366,21 @@ class Incompressible:
 
     def Frequency(self, s):
         """
-        Define the transient part of the frequency-domain Navier-Stokes equations after Fourier/Laplace transformation.
+        Define the transient part of the frequency-domain Navier-Stokes equations.
+
+        This method applies Fourier or Laplace transformations to the transient terms.
 
         Parameters
         ----------
         s : complex
-            The Laplace variable s, representing the growth rate and frequency.
+            Laplace variable s = σ + iω, representing growth rate and frequency.
 
         Returns
         -------
-        FNS_r : UFL expression
-            The real part (growth rate) of the transient part.
-        FNS_i : UFL expression
-            The imaginary part (frequency) of the transient part.
+        FNS_r : UFL Form
+            The real part (growth rate term) of the frequency-domain equations.
+        FNS_i : UFL Form
+            The imaginary part (frequency term) of the frequency-domain equations.
         """
         self.s = s
         omega, sigma = np.imag(s), np.real(s)
@@ -283,44 +400,56 @@ class Incompressible:
     def Transient(self, dt, scheme="backward", order=1, implicit=True):
         """
         Define the transient part using a time discretization scheme.
-        
-        At timestep n+1:
-        if scheme == 'backward' and order == 1:
-            du/dt = u_{n+1} - u_{n}
+
+        Supports first-order backward difference schemes:
+            At timestep n+1:
+            if scheme == 'backward' and order == 1:
+                du/dt = u_{n+1} - u_{n}
 
         Parameters
         ----------
         dt : float
             Time step size.
         scheme : str, optional
-            Time discretization scheme. Default is "backward".
+            Time discretization scheme (default is "backward").
         order : int, optional
-            Order of the scheme. Default is 1.
+            Order of the scheme (default is 1).
         implicit : bool, optional
-            Whether to use an implicit scheme. Default is True.
+            Whether to use an implicit scheme (default is True).
 
         Returns
         -------
-        TNS : UFL expression
-            The transient part (first order time derivative) in the Navier-Stokes equations.
+        TNS : UFL Form
+            The transient term in the Navier-Stokes equations.
+
+        Raises
+        ------
+        ValueError
+            If the scheme or order is not supported.
         """
 
         self.dt = dt
-        self._add_temporary_functions(order)  # add function at previous time step
-        prev_u = self.fu[order]
+        self._add_temporary_functions(order)  # Add functions for previous time steps
+        prev_u = self.fu[order]  # Velocity at previous time step
 
         if implicit:
             if order == 1 and scheme == "backward":
                 TNS = dot((self.tu - prev_u) / Constant(dt), self.v) * dx  # self.fu[1] at previous time step
+            else:
+                raise ValueError("Unsupported scheme or order for implicit time discretization.")
         else:
             if order == 1 and scheme == "backward":
                 TNS = dot((self.u - prev_u) / Constant(dt), self.v) * dx  # self.fu[1] at previous time step
+            else:
+                raise ValueError("Unsupported scheme or order for explicit time discretization.")
 
         return TNS
 
     def IPCS(self, dt):
         """
         Define the Implicit Pressure Correction Scheme (IPCS) for transient Navier-Stokes equations.
+
+        This method implements a three-step IPCS algorithm for solving transient incompressible flows.
         (seems compressible NS eqns are used)
         
         Parameters
@@ -331,7 +460,7 @@ class Incompressible:
         Returns
         -------
         tuple
-            LHS and RHS expressions for the three-step IPCS method.
+            Contains the left-hand side (LHS) and right-hand side (RHS) forms for the three IPCS steps.
         """
 
         self.nu = Constant(1.0 / self.Re)
@@ -385,8 +514,8 @@ class Incompressible:
 
         Returns
         -------
-        F : UFL expression
-            The external source term.
+        F : UFL Form
+            The source term in the weak form.
         """
 
         F = (inner(self.const_expr, self.v) + inner(self.time_expr, self.v)) * dx
@@ -396,11 +525,13 @@ class Incompressible:
 
     def BoundaryTraction(self, p, u, nu, mark=None, mode=None):
         """
-        Define the boundary traction term for the Navier-Stokes equations.
-        
+        Define the boundary traction term for the Navier-Stokes equations (usually used in the outlet boundary).
+
+        This term appears in the weak formulation and accounts for boundary stresses.
         Note it is a residual term appearing in the standard NS variational problem
-        A feature of variational formulations is that the test function v is equired to vanish on the parts of the boundary where the solution u is known
-        
+        A feature of variational formulations is that the test function v is equired to vanish on the parts of the
+        boundary where the solution u is known.
+
         Parameters
         ----------
         p : Function
@@ -410,19 +541,28 @@ class Incompressible:
         nu : Constant
             Kinematic viscosity.
         mark : int, optional
-            Boundary marker. Default is None.
+            Boundary marker for applying the traction on specific boundaries. Default is None (all boundaries).
         mode : int, optional
-            Mode for traction calculation. Default is None.
+            Mode for traction calculation:
+            - 0: Standard incompressible Navier-Stokes equations.
+            - 1: Compressible Navier-Stokes equations with fully developed assumption and pressure boundary condition.
+            - 2: Compressible Navier-Stokes equations.
+            - 3: Incompressible Navier-Stokes equations with fully developed assumption and pressure boundary condition.
+            Default is 0.
 
         Returns
         -------
-        FBC : UFL expression
+        FBC : UFL Form
             The boundary traction term.
-            a residual term due to variational form; 
+            a residual term due to variational form;
             cancelled by implicit(e.g. free outlet) boundary condition
-            test: FBC cancelled by Dirchlet BC and Free BC at Outlet; convergence problem when no BC applied at Boundary. 
+            test: FBC cancelled by Dirchlet BC and Free BC at Outlet; convergence problem when no BC applied at Boundary.
                     cause convergence problem if the number of BCs is not equal to that of boundraies
 
+        Raises
+        ------
+        ValueError
+            If an invalid mode is specified.
         """
 
         ds0 = self.ds if mark is None else self.ds(mark)
@@ -446,7 +586,7 @@ class Incompressible:
 
     def epsilon(self, u):
         """
-        Compute the symmetric gradient of the velocity.
+        Compute the symmetric gradient (strain rate tensor) of the velocity field.
 
         Parameters
         ----------
@@ -455,8 +595,8 @@ class Incompressible:
 
         Returns
         -------
-        epsilon_u : UFL expression
-            Symmetric gradient of the velocity.
+        epsilon_u : UFL Tensor
+            The symmetric gradient of the velocity.
         """
 
         return sym(nabla_grad(u))
@@ -467,25 +607,31 @@ class Incompressible:
 
         Parameters
         ----------
+        nu : Constant
+            Kinematic viscosity.
         u : Function
             Velocity function.
+        p : Function
+            Pressure function.
 
         Returns
         -------
-        sigma_u : UFL expression
-            Stress tensor.
+        sigma_u : UFL Tensor
+            The stress tensor.
         """
 
         return 2 * nu * self.epsilon(u) - p * Identity(len(u))
 
     def force_expr(self):
         """
-        Define the force expressions for lift and drag calculations.
+        Define the expressions for computing force components due to pressure and viscous stress.
 
         Returns
         -------
         tuple
-            Force components due to pressure and stress.
+            Tuple containing force components:
+            - force1: Force due to pressure.
+            - force2: Force due to viscous stress.
         """
 
         self.nu = Constant(1.0 / self.Re)
@@ -499,12 +645,12 @@ class Incompressible:
 
     def vorticity_expr(self):
         """
-        Define the vorticity expression.
+        Define the expression for computing the vorticity of the velocity field.
 
         Returns
         -------
-        vorticity : UFL expression
-            Vorticity of the velocity field.
+        vorticity : UFL Expression
+            The vorticity of the velocity field.
         """
 
         return curl(self.tu)
@@ -512,7 +658,13 @@ class Incompressible:
 
 class Compressible:
     """
-    pending
+    Placeholder class for defining various forms of the compressible Navier-Stokes equations.
+
+    This class is pending implementation and is included for future extensions.
+
+    Methods
+    -------
+    (To be implemented)
     """
 
     def __init__(self):

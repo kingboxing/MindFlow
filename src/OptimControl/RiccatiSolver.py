@@ -1,14 +1,78 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Sat Sep 14 22:13:08 2024
+This module provides the `GRiccatiDAE2Solver` class for solving generalized Riccati equations for index-2 systems using the M.E.S.S. (Matrix Equation Sparse Solver) library.
 
-@author: bojin
+The class supports both Python (PyM.E.S.S.) and MATLAB (M-M.E.S.S.) backends and allows for solving the Riccati
+equation using methods like Newton's method (NM) and the Rational Arnoldi (RADI) method. It also provides
+functionality to compute performance metrics such as the H2 norm of the system.
 
-Generalized Riccati Equation Solver
+Classes
+-------
+- GRiccatiDAE2Solver:
+    Solves generalized Riccati equations for index-2 systems and computes performance metrics.
 
-This module provides the GRiccatiDAE2Solver class for solving generalized Riccati equations
-for index-2 systems using the M.E.S.S. library.
+Dependencies
+------------
+- FEniCS
+- NumPy
+- SciPy
+- M.E.S.S. library (Python or MATLAB version)
+- joblib
+- multiprocessing
+
+Ensure that all dependencies are installed and properly configured.
+
+Examples
+--------
+Typical usage involves creating an instance of `GRiccatiDAE2Solver` with a state-space model, setting
+the desired method and backend, solving the Riccati equation, and computing performance metrics.
+
+```python
+from FERePack.OptimControl.RiccatiSolver import GRiccatiDAE2Solver
+from FERePack.OptimControl import StateSpaceDAE2
+
+# Define mesh and parameters
+mesh = ...  # Define your mesh
+Re = 100.0
+
+# Initialize the state-space model
+model = StateSpaceDAE2(mesh, Re=Re, order=(2, 1), dim=2)
+
+# Set boundary conditions
+model.set_boundary(bc_list)
+model.set_boundarycondition(bc_list)
+
+# Set base flow
+model.set_baseflow(ic=base_flow_function)
+
+# Define input and output vectors
+input_vec = ...  # Define your input vector (actuation)
+output_vec = ...  # Define your output vector (measurement)
+
+# Assemble the state-space model
+model.assemble_model(input_vec=input_vec, output_vec=output_vec)
+
+# Initialize the Riccati solver with the model
+riccati_solver = GRiccatiDAE2Solver(model, method='nm', backend='python')
+
+# Solve the Riccati equation
+riccati_solver.solve_riccati()
+
+# Access the solution factor (Z) of the Riccati equation
+solution_factor = riccati_solver.facZ
+
+# Compute the squared H2 norm of the closed-loop system
+h2_norm_squared = riccati_solver.sys_energy(MatQ)
+```
+
+Notes
+--------
+
+- The class handles both continuous-time algebraic Riccati equations and provides options to choose different solution methods and backends.
+- It supports both low-rank and full-rank solutions, depending on the method used.
+- The computed solution can be used for controller synthesis, stability analysis, and performance evaluation.
+
 """
 
 from ..Deps import *
@@ -21,9 +85,51 @@ from ..Interface.Py2Mat import python2matlab, matlab2python, start_matlab
 
 class GRiccatiDAE2Solver:
     """
-    Solve a generalized Riccati equation for an Index-2 system and computes various performance metrics
-    like the H2 norm.
-    Supports both Python (Py M.E.S.S.) and MATLAB (M M.E.S.S.) backends.
+    Solves a generalized Riccati equation for an index-2 system and computes various performance metrics like the H2 norm.
+
+    Supports both Python (PyM.E.S.S.) and MATLAB (M-M.E.S.S.) backends.
+
+    Parameters
+    ----------
+    model : dict or StateSpaceDAE2
+        State-space model or dictionary containing system matrices.
+    method : str, optional
+        Method used to solve generalized Riccati equations ('nm' or 'radi'). Default is 'nm'.
+    backend : str, optional
+        Backend used to solve generalized Riccati equations ('python' or 'matlab'). Default is 'python'.
+
+    Attributes
+    ----------
+    eqn : dict
+        Dictionary containing system matrices and parameters.
+    param : dict
+        Default parameters for the Riccati solver.
+    facZ : numpy.ndarray or dict
+        Solution factor of the Riccati equation.
+    status : dict
+        Status information from the solver.
+    sys_energy : function
+        Function to compute the squared H2 norm of the system.
+    gain_energy : function
+        Function to compute the contribution of the estimator/regulator on the H2 norm.
+
+    Methods
+    -------
+    solve_riccati(engine=None)
+        Solve the generalized Riccati equation.
+    sys_energy(MatQ, pid=None, chunk_size=5000)
+        Compute the squared H2 norm of the closed-loop system.
+    gain_energy(K)
+        Compute the contribution of each estimator/regulator on the H2 norm.
+    _feedback_pencil(U, V, mode)
+        Assemble the feedback pencil for the system.
+
+    Notes
+    -----
+    - The class supports solving the Riccati equation using either Newton's method or the RADI method.
+    - It can interface with both Python and MATLAB versions of the M.E.S.S. library.
+    - The solution factor `facZ` can be used to reconstruct the solution of the Riccati equation.
+    - The computed feedback can be applied to the system to achieve stabilization or performance improvements.
     """
 
     def __init__(self, model, method='nm', backend='python'):
@@ -35,9 +141,9 @@ class GRiccatiDAE2Solver:
         model : dict or StateSpaceDAE2
             State-space model or dictionary containing system matrices.
         method : str, optional
-            Method used to solve generalized Riccati equations. Default is 'nm'.
+            Method used to solve generalized Riccati equations ('nm' or 'radi'). Default is 'nm'.
         backend : str, optional
-            Backend used to solve generalized Riccati equations. Default is 'python'.
+            Backend used to solve generalized Riccati equations ('python' or 'matlab'). Default is 'python'.
         """
         self._default_parameters(method, backend)
         self._extract_model(model)
@@ -49,6 +155,13 @@ class GRiccatiDAE2Solver:
     def _default_parameters(self, method, backend):
         """
         Set default parameters based on the method and backend.
+
+        Parameters
+        ----------
+        method : str
+            Method used to solve generalized Riccati equations ('nm' or 'radi').
+        backend : str
+            Backend used to solve generalized Riccati equations ('python' or 'matlab').
         """
         if method == 'nm' and backend == 'python':
             self.param = DefaultParameters().parameters['nmriccati_pymess']
@@ -60,12 +173,17 @@ class GRiccatiDAE2Solver:
 
     def _extract_model(self, model):
         """
-        Assign the state-space model to self.eqn.
+        Assign the state-space model to `self.eqn`.
 
         Parameters
         ----------
         model : dict or StateSpaceDAE2
             State-space model.
+
+        Raises
+        ------
+        TypeError
+            If the input `model` is not a valid state-space model.
         """
         self.eqn = {}
         if isinstance(model, dict):
@@ -96,7 +214,12 @@ class GRiccatiDAE2Solver:
 
     def _apply_matlab_system(self):
         """
-        formulate system matrices while using Matlab backend.
+        Formulate system matrices when using the MATLAB backend.
+
+        Returns
+        -------
+        eqn_mat : dict
+            Dictionary containing the system matrices in MATLAB format.
         """
         A_full, E_full = assemble_dae2(self.eqn)
         # Update state-space model with assembled matrices
@@ -110,7 +233,12 @@ class GRiccatiDAE2Solver:
 
     def _apply_matlab_solver(self, eng):
         """
-        solve Riccati Equation using Matlab backend.
+        Solve the Riccati equation using the MATLAB backend.
+
+        Parameters
+        ----------
+        eng : matlab.engine.MatlabEngine
+            MATLAB engine instance.
         """
         self._apply_parameters()
         eqn_mat = self._apply_matlab_system()
@@ -131,17 +259,22 @@ class GRiccatiDAE2Solver:
     def solve_riccati(self, engine=None):
         """
         Solve the generalized Riccati equation.
+
         The solution depends on the method and backend being used:
+            - Provides the factor Z of the solution X = Z * Z^T when using method = 'nm'.
+            - Provides the factor Z of the solution X = Z * inv(Y) * Z^T when using method = 'radi' with param.radi.compute_sol_fac = true and not only initial K0.
+            - Provides the factor Z of the solution X = Z * D * Z^T when using method = 'radi' with param.LDL_T = true and not only initial K0..
 
-            Provides the factor Z of the solution X = Z * Z^T when using method = 'nm'.
-
-            Provides the factor Z of the solution X = Z * inv(Y) * Z^T when using method = 'radi' with param.radi.compute_sol_fac = true and not only initial K0.
-
-            Provides the factor Z of the solution X = Z * D * Z^T when using method = 'radi' with param.LDL_T = true.
         Parameters
         ----------
-        engine : object from matlab.engine.start_matlab()
-            matlab engine to solve the Riccati equation.
+        engine : matlab.engine.MatlabEngine, optional
+            MATLAB engine instance to solve the Riccati equation. Required if backend is 'matlab'.
+            If None, a new MATLAB engine is started. Default is None.
+
+        Notes
+        -----
+        - For 'nm' method with 'python' backend, uses PyM.E.S.S. to solve the Riccati equation.
+        - For 'nm' or 'radi' methods with 'matlab' backend, uses M-M.E.S.S. via MATLAB engine.
         """
         if self.param['method'] == 'nm' and self.param['backend'] == 'python':
             self._apply_parameters()
@@ -159,9 +292,17 @@ class GRiccatiDAE2Solver:
 
     def _solution_factor(self):
         """
-        return solution factor for different solver.
+        Return the solution factor for different solvers.
 
-        pending for further development.
+        Returns
+        -------
+        facZ : numpy.ndarray
+            Solution factor of the Riccati equation.
+
+        Notes
+        -----
+        - Handles different cases based on the method and parameters used.
+        - If the solution is not available, returns None.
         """
         if not isinstance(self.facZ, dict):
             return self.facZ
@@ -179,14 +320,13 @@ class GRiccatiDAE2Solver:
     def _squared_h2norm_system(self, MatQ, pid=None, chunk_size=5000):
         """
         Compute the squared H2 norm of the closed-loop system.
-        H2-Norm = Q * Z * Z^T * Q^T, where Q = M^(1/2).
 
         Parameters
         ----------
         MatQ : scipy.sparse matrix
-            Factor of the weight matrix used to evaluate the H2 norm.
+            Square-root/Cholesky factor of the weight matrix used to evaluate the H2 norm.
         pid : int, optional
-            Number of parallel processes. Default is None (uses available cores).
+            Number of parallel processes. Default uses available cores minus one.
         chunk_size : int, optional
             Maximum number of columns to process per iteration. Default is 5000.
 
@@ -194,6 +334,12 @@ class GRiccatiDAE2Solver:
         -------
         float
             Squared H2 norm.
+
+        Notes
+        -----
+        - Uses parallel processing to speed up computation.
+        - The H2 norm is formulated as 'MatQ @ facZ @ facZ^T @ MatQ^T', where 'MatQ = M^(1/2)'
+        - The H2 norm is computed as the Frobenius norm of `MatQ @ facZ`.
         """
         #%% pending
         facZ = self._solution_factor()
@@ -246,23 +392,27 @@ class GRiccatiDAE2Solver:
 
     def _squared_h2norm_gain(self, K):
         """
-        Compute the contribution of each estimator/regulator on the H2 Norm.
-        e.g. in LQE problem, K is the full-information controller, the result shows propagated estimation error energy
+        Compute the contribution of each estimator/regulator on the H2 norm.
+
+        Parameters
+        ----------
+        K : numpy.ndarray
+            Feedback matrix.
+
+        Returns
+        -------
+        numpy.ndarray
+            Diagonal elements representing the contribution of each estimator.
+
+        Notes
+        -----
+        - Useful for analyzing the impact of estimation errors on control performance.
+        - In LQE problem, K is the full-information controller, the result shows propagated estimation error energy
         through the LQR gain matrix, which reflects the impact of estimation errors on the performance of the control
         effort (i.e. in LQG problem). It measures the control sensitivity to estimation errors: higher values suggest
         that the control actions are more sensitive to inaccuracies in the estimated state, thus indicating a greater
         impact of estimation errors on control performance. In simpler terms, it answers: How much does the control
         effort suffer due to errors in state estimation?
-
-        Parameters
-        ----------
-        K : numpy array
-            Feedback matrix.
-
-        Returns
-        -------
-        numpy array
-            Diagonal matrix representing the contribution of each estimator.
         """
         facZ = self._solution_factor()
         if facZ is None:
@@ -277,25 +427,32 @@ class GRiccatiDAE2Solver:
 
     def _feedback_pencil(self, U, V, mode):
         """
-        Assemble the feedback pencil.
-        Matrix A can have the form A = Ã + U*V' if U (eqn.U) and V (eqn.V) are provided U and V are dense (n x m3)
-        matrices and should satisfy m3 << n
-
-        In LQE (e.g. sol_type = 'N') problem, V could always be the measurement matrix C, so U can be only added directly
-        In LQR (e.g. sol_type = 'T') problem, U could always be the actuation matrix B, so V can be only added directly
-        Otherwise, U, V stacked, and dimensions increase
+        Assemble the feedback pencil for the system.
 
         Parameters
         ----------
-        U : dense (n x m3) matrix
-            for feedback pencil.
-        V : dense (n x m3) matrix
-            for feedback pencil.
+        U : numpy.ndarray
+            Feedback matrix U (n x m3).
+        V : numpy.ndarray
+            Feedback matrix V (n x m3).
         mode : int
-            Mode of assembling feedback pencil. Default is 0.
+            Mode of assembling feedback pencil.
             - If mode = 0, feedback is accumulated directly to the state matrix.
-            - If mode = 1 and backend = 'matlab', feedback is updated to U and V matrices in self.eqn.
+            - If mode = 1 and backend is 'matlab', feedback is updated to U and V matrices in `self.eqn`.
 
+        Notes
+        -----
+        - Modifies the system matrices based on the feedback provided.
+        - Supports different modes of applying feedback depending on the backend.
+        - Matrix A can have the form A = Ã + U * V^T if U (eqn.U) and V (eqn.V) are provided U and V are dense (n x m3) matrices and should satisfy m3 << n.
+        - In LQE (e.g. sol_type = 'N') problem, V could always be the measurement matrix C, so U can be only added directly.
+        - In LQR (e.g. sol_type = 'T') problem, U could always be the actuation matrix B, so V can be only added directly.
+        - Otherwise, U, V stacked, and dimensions increase
+
+        Raises
+        ------
+        ValueError
+            If an invalid mode or backend is provided.
         """
         # get solver type
         backend = self.param['backend']

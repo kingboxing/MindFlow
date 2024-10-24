@@ -1,44 +1,53 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Wed Oct 18 11:06:27 2023
+This module provides classes for defining and managing boundaries and boundary conditions
+based on FEniCS functionality. It includes functionality for setting up Dirichlet boundary conditions,
+marking boundaries, and applying various types of boundary conditions such as velocity inlets,
+slip walls, symmetry boundaries, no-slip walls, and pressure inlets/outlets.
 
-@author: bojin
+Classes
+-------
+- Boundary: Base class for defining boundaries.
+- BoundaryCondition: Factory class for creating boundary conditions.
+- SetBoundary: Subclass of SubDomain for defining and marking boundaries.
+- SetBoundaryCondition: Class for setting up Dirichlet boundary conditions.
 """
 
 from ..Deps import *
-
-"""
-This class provides subclasses of FEniCS interface of
-defining and marking boundaries 
-"""
 
 
 #%%
 class Boundary:
     """
-    Define boundary for FEniCS simulations.
+    Base class for defining boundaries based on FEniCS
+
+    This class provides methods for initializing and defining boundary markers.
+
+    Attributes
+    ----------
+    bc_list : dict
+        A dictionary to store boundary definitions with their marks.
     """
 
     def __init__(self):
         """
-        initilise boundary list
-
+        Initialize the boundary list.
         """
         self.bc_list = {}
 
     def define(self, mark, name, locs):
         """
-        define boundary
+        Define a boundary with a specific mark, name, and location.
 
         Parameters
         ----------
         mark : int
-            mark of the boundary.
+            The unique identifier for the boundary.
         name : str
-            name of the boundary.
+            The name of the boundary.
         locs : str
-            location of the boundary.
+            The location expression of the boundary in terms of coordinates.
 
         Returns
         -------
@@ -50,7 +59,16 @@ class Boundary:
 
 class BoundaryCondition(Boundary):
     """
-    A factory of boundary conditions for FEniCS simulations.
+    Factory class for creating boundary conditions.
+
+    This class extends the `Boundary` class and provides methods to apply
+    various types of boundary conditions like velocity inlets, slip walls,
+    symmetry boundaries, no-slip walls, and pressure inlets/outlets.
+
+    Attributes
+    ----------
+    element : object
+        The finite element used in the simulation.
     """
 
     def __init__(self, element):
@@ -68,7 +86,7 @@ class BoundaryCondition(Boundary):
     def _validate_mark_and_value(self, mark, value,
                                  value_types=(tuple, function.function.Function, function.expression.Expression)):
         """
-        Validate the mark and value parameters for boundary conditions.
+        Validate the `mark` and `value` parameters for boundary conditions.
 
         Parameters
         ----------
@@ -77,7 +95,7 @@ class BoundaryCondition(Boundary):
         value : tuple, Function, or Expression
             The value to apply at the boundary.
         value_types : tuple, optional
-            Types that the value can be. Default is (tuple, Function, Expression).
+            The acceptable types for `value`. Default is (tuple, Function, Expression).
 
         Raises
         ------
@@ -114,15 +132,16 @@ class BoundaryCondition(Boundary):
 
     def SlipWall(self, mark, norm, vel=0.0):
         """
-        Apply a slip wall boundary condition. 
-        Now only for boundary parallel or normal to axis
+        Apply a slip wall boundary condition.
+
+        Currently supports boundaries parallel or normal to axes.
 
         Parameters
         ----------
         mark : int
             The identifier for the boundary.
         norm : tuple
-            A positive vector normal to the boundary.
+            A unit vector normal to the boundary (positive direction).
         vel : float, optional
             The velocity across/normal the boundary. Default is 0.0.
 
@@ -232,22 +251,37 @@ class BoundaryCondition(Boundary):
 
 class SetBoundary(SubDomain, BoundaryCondition):
     """
-    A subclass of SubDomain for defining and marking a boundary.
+    Subclass of `SubDomain` and `BoundaryCondition` for defining and marking boundaries.
+
+    This class is responsible for setting up the boundaries in the mesh,
+    marking them with specific identifiers, and providing measures for integration.
 
     Attributes
-    -------------------
-    boundary : FacetFunction with marked boundary on given mesh
-
+    ----------
+    boundary : MeshFunction
+        MeshFunction with marked boundaries on the given mesh.
+    submesh : BoundaryMesh
+        The boundary mesh extracted from the main mesh.
+    subboundary : MeshFunction
+        MeshFunction on the boundary mesh.
+    mark_all : int
+        The initial mark applied to the entire domain.
+    mesh : Mesh
+        The mesh on which boundaries are defined.
+    tol : float
+        Tolerance for boundary location.
+    option : str
+        The location expression of the boundary.
     """
 
     def __init__(self, mesh, element, mark_all=0):
         """
-        Initialize 
+        Initialize the `SetBoundary` object.
         
         Parameters
         ----------
-        mesh : object created by FEniCS function Mesh
-            DESCRIPTION.
+        mesh : Mesh
+            The mesh created by FEniCS function `Mesh`.
         element : object
             The finite element used in the simulation.
         mark_all : int, optional
@@ -275,6 +309,9 @@ class SetBoundary(SubDomain, BoundaryCondition):
         """
         Determine if a point is inside the boundary.
 
+        This method is used to check if a point `x` is inside the boundary
+        based on the location expression `self.option`.
+
         Parameters
         ----------
         x : array-like
@@ -292,21 +329,31 @@ class SetBoundary(SubDomain, BoundaryCondition):
 
     def set_boundary(self, location, mark, tol=1e-10):
         """
-        Define and mark the boundary.
+        Define and mark the boundary on the mesh.
 
         Parameters
         ----------
         location : str
-            The location of the boundary.
+            The location expression of the boundary in terms of coordinates.
+            For example, 'on_boundary and near(x[0], 0, tol)'.
         mark : int
             The identifier for the boundary.
         tol : float, optional
             Tolerance for boundary location. Default is 1e-10.
+
+        Returns
+        -------
+        None
+
+        Raises
+        ------
+        ValueError
+            If `mark` is equal to `self.mark_all`.
         """
 
         self.tol = tol
         if mark == self.mark_all:
-            info('Warning : The Mark Number of the Boundary is the Same as the Mesh Facets')
+            info('Warning : The marker of the boundary is the same as the mesh facets')
         else:
             self.option = location
             self.mark(self.boundary, mark)
@@ -320,73 +367,91 @@ class SetBoundary(SubDomain, BoundaryCondition):
 
     def get_measure(self):
         """
-        Get the measure object of the domain
+        Get the measure object of the domain for integration over boundaries.
 
         Returns
         -------
         Measure
-            A Measure object with IDs of boundaries in the domain.
+            A `Measure` object with IDs of boundaries in the domain, used for integration.
         """
         ds = Measure('ds', domain=self.mesh, subdomain_data=self.boundary)
         return ds
 
     def get_domain(self):
         """
-        Get the FacetFunction on given mesh
+        Get the `MeshFunction` representing the boundaries on the mesh.
 
         Returns
         ---------------------
-        boundary : FacetFunction with marked boundary on given mesh
+        MeshFunction
+            The `MeshFunction` with marked boundaries on the given mesh.
         """
         return self.boundary
 
     # unused functionality
     def get_submeasure(self):
+        """
+        Get the measure object for the subdomain (boundary mesh).
+
+        Returns
+        -------
+        Measure
+            A `Measure` object with IDs of boundaries on the boundary mesh.
+        """
         ds = Measure('ds', domain=self.submesh, subdomain_data=self.subboundary)
         return ds
 
     def get_subdomain(self):
+        """
+        Get the `MeshFunction` representing the boundaries on the submesh.
+
+        Returns
+        -------
+        MeshFunction
+            The `MeshFunction` with marked boundaries on the submesh.
+        """
         return self.subboundary
 
 
 #%%
-"""
-This class provides classes for setting up boundary conditions
-"""
-
 
 class SetBoundaryCondition:
     """
-    A class to set up the Dirichlet boundary condition
+    Class for setting up Dirichlet boundary conditions
 
-    Parameters
-    -------------------
-    Functionspace : a finite element function space
-
-    set_boundary : object SetBoundary()
-        the SetBoundary object with defined and marked boundaries
+    This class uses the boundary definitions from a `SetBoundary` object to
+    apply Dirichlet boundary conditions to a given function space.
 
     Attributes
-    -------------------
-    functionspace : a finite element function space
-
-    boundary : FacetFunction on given mesh
-
-    bc_list : a list with boundary conditions
-
-
+    ----------
+    functionspace : FunctionSpace
+        The finite element function space to which the boundary conditions are applied.
+    set_boundary : SetBoundary
+        The `SetBoundary` object with defined and marked boundaries.
+    boundary : MeshFunction
+        The `MeshFunction` representing the boundaries on the mesh.
+    bc_list : list
+        A list of `DirichletBC` objects representing the boundary conditions.
+    has_free_bc : bool
+        Indicates if there are free boundary conditions (zero boundary traction).
+    v : TestFunction
+        The test function in the function space.
+    u : TrialFunction
+        The trial function in the function space.
+    func : Function
+        A function in the function space.
     """
 
     def __init__(self, functionspace, set_boundary):
         """
-        Initialise
+        Initialize the `SetBoundaryCondition` object.
 
         Parameters
         ----------
         functionspace : FunctionSpace
-            a finite element function space.
+            The finite element function space to which the boundary conditions are applied.
         set_boundary : SetBoundary
-            SetBoundary object with defined and marked boundaries.
+            The `SetBoundary` object with defined and marked boundaries.
 
         Returns
         -------
@@ -406,16 +471,26 @@ class SetBoundaryCondition:
 
     def set_boundarycondition(self, bc_dict, mark):
         """
-        Set a boundary condition using FEniCS' DirichletBC as
+        Set a boundary condition using FEniCS' `DirichletBC`:
             DirichletBC(self.functionspace.sub(0).sub(0), self.boundary, mark)
-        
+
         Parameters
-        ------------------------
-        bc_dict: dict
-            Contains 'FunctionSpace' and 'Value' keys.
-            which respectively indicate the subspace and the value of the boundary condition
-        mark: int
+        ----------
+        bc_dict : dict
+            Dictionary containing boundary condition information with keys:
+            - 'FunctionSpace': str, the subspace to which the boundary condition is applied.
+            - 'Value': the value of the boundary condition.
+        mark : int
             The identifier for the boundary.
+
+        Returns
+        -------
+        None
+
+        Raises
+        ------
+        ValueError
+            If 'FunctionSpace' or 'Value' is missing in `bc_dict`.
 
         """
         if 'FunctionSpace' not in bc_dict or 'Value' not in bc_dict:
@@ -442,33 +517,13 @@ class SetBoundaryCondition:
         func = f"DirichletBC(self.functionspace{sub_function_space}, {value}, self.boundary, mark, method='geometric')"
         self.bc_list.append(eval(func))  # boundary condition added to the list bcs
 
-        # if 'Value' not in bc_dict:
-        #     if 'FunctionSpace' not in bc_dict:
-        #         info('Please specify the FunctionSpace and Value of the Dirichlet Boundary Condition Applied at Boundary % g' % mark)
-        #     else:
-        #         info('Please specify the Value of the Dirichlet Boundary Condition Applied at Boundary % g' % mark)
-        # elif bc_dict['Value'] in ['Free Boundary']:
-        #     info('Free boundary condition (zero boundary traction) applied at Boundary % g' % mark)
-        #     self.has_free_bc+=1
-        # elif 'FunctionSpace' not in bc_dict:
-        #     info('Please specify the FunctionSpace of the Dirichlet Boundary Condition Applied at Boundary % g' % mark)
-        # elif bc_dict['FunctionSpace'] is not None and bc_dict['Value'] is not None:
-        #         index = bc_dict['FunctionSpace'].find('.') # find the index of the first dot
-        #         if bc_dict['FunctionSpace'][index] == '.': # if bc_dict applied to a subspace
-        #             bc = 'DirichletBC(self.functionspace' + bc_dict['FunctionSpace'][index:] \
-        #                 + ',' + "bc_dict['Value']" + ',' + 'self.boundary' + ',' + 'mark, method="geometric")' 
-        #         else: # bc_dict applied to functionspace
-        #             bc= 'DirichletBC(self.functionspace' +  ',' + "bc_dict['Value']" + ',' \
-        #                 + 'self.boundary' + ',' + 'mark, method="geometric")'
-        #         self.bc_list.append(eval(bc)) # boundary condition added to the list bcs
-        # else:
-        #     info('No Dirichlet Boundary Condition at Boundary % g' % mark)
-
-        # deal with 'FreeOutlet' BC
-
     def MatrixBC_rhs(self):  # try with assemble module
         """
-        Create a matrix with zeros in rows that have Dirichlet boundary conditions and ones in diagonal elsewhere.
+        Create a matrix for the right-hand side with applied boundary conditions.
+
+        This method creates a matrix with zeros in rows that have Dirichlet boundary conditions
+        and ones in diagonal elsewhere.
+
         Returns
         -------
         PETScMatrix
@@ -482,7 +537,11 @@ class SetBoundaryCondition:
 
     def VectorBC_rhs(self):
         """
-        Create a vector with BC values in rows that have Dirichlet boundary conditions.
+        Create a vector for the right-hand side with applied boundary conditions.
+
+        This method creates a vector with boundary condition values in rows that
+        have Dirichlet boundary conditions and zeros elsewhere.
+
         Returns
         -------
         PETScVector

@@ -1,13 +1,40 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Sat Aug 24 23:53:10 2024
+This module provides classes and functions for matrix and vector conversions, assembling linear systems,
+and solving linear equations using various LU solvers. It is intended to facilitate the handling of matrices
+and vectors in finite element simulations and to provide efficient solvers for large sparse systems.
 
-@author: bojin
-"""
+Classes
+-------
+- SparseLUSolver:
+    Base class for sparse LU solvers.
+- FEniCSLU:
+    LU solver using FEniCS functions with PETSc backend.
+- PETScLU:
+    LU solver using PETSc in petsc4py.
+- SuperLU:
+    LU solver using SuperLU in scipy.sparse.linalg.
+- UmfpackLU:
+    LU solver using UMFPACK in scikits.umfpack.
+- InverseMatrixOperator:
+    Inverse operator for iterative solvers requiring matrix-vector products A^{-1} * b.
 
-"""
-This module provides functions for matrix/vector conversion, assembling linear operators, and solving linear equations using various LU solvers.
+Functions
+---------
+- ConvertMatrix(matrix, flag='PETSc2Mat'):
+    Convert between FEniCS PETScMatrix and scipy.sparse.csr_matrix.
+- ConvertVector(vector, flag='PETSc2Vec'):
+    Convert between FEniCS PETScVector and NumPy array.
+- AssembleSystem(mat_expr, vec_expr, bcs=None):
+    Assemble a linear system from FEniCS expressions.
+- AssembleMatrix(expr, bcs=[]):
+    Assemble a matrix from a UFL expression.
+- AssembleVector(expr, bcs=[]):
+    Assemble a vector from a UFL expression.
+- TransposePETScMat(A):
+    Transpose a FEniCS PETScMatrix.
+
 """
 
 from ..Deps import *
@@ -15,26 +42,37 @@ from ..LinAlg.Utils import woodbury_solver
 
 #%%
 """
-This class provides functions that assemble FEniCS expression into CSR matrix/ numpy vector
+Helper function for matrix/vector assembling and convertion
 """
 
 
 def ConvertMatrix(matrix, flag='PETSc2Mat'):
     """
-    convert a matrix between Scipy.sparse.csr_matrix and FEniCS PETScMatrix
+    Convert a matrix between FEniCS PETScMatrix and scipy.sparse.csr_matrix formats.
 
     Parameters
     ----------
-    matrix : FEniCS PETScMatrix or scipy.sparse matrix
+    matrix : FEniCS PETScMatrix or scipy.sparse.csr_matrix
         The matrix to be converted.
     flag : str, optional
-        'PETSc2Mat' (default) converts from FEniCS PETScMatrix to scipy.sparse.csr_matrix.
-        'Mat2PETSc' converts from scipy.sparse.csr_matrix to FEniCS PETScMatrix.
+        Specifies the conversion direction. Options are:
+        - 'PETSc2Mat' (default): Convert from FEniCS PETScMatrix to scipy.sparse.csr_matrix.
+        - 'Mat2PETSc': Convert from scipy.sparse.csr_matrix to FEniCS PETScMatrix.
 
     Returns
     -------
     Converted matrix in the desired format.
 
+    Raises
+    ------
+    ValueError
+        If an invalid flag is provided.
+
+    Examples
+    --------
+        A_petsc = assemble(a)
+        A_csr = ConvertMatrix(A_petsc, flag='PETSc2Mat')
+        A_petsc_again = ConvertMatrix(A_csr, flag='Mat2PETSc')
     """
     if flag == 'PETSc2Mat':
         A_mat = as_backend_type(matrix).mat()
@@ -51,20 +89,31 @@ def ConvertMatrix(matrix, flag='PETSc2Mat'):
 
 def ConvertVector(vector, flag='PETSc2Vec'):
     """
-    Convert a vector between 1D numpy array and FEniCS PETSc Vector.
+    Convert a vector between FEniCS PETScVector and NumPy array formats.
 
     Parameters
     ----------
-    vector : FEniCS PETScVector or numpy array
+    vector : PETScVector or numpy.ndarray
         The vector to be converted.
     flag : str, optional
-        'PETSc2Vec' (default) converts from PETScVector to numpy array.
-        'Vec2PETSc' converts from numpy array to PETScVector.
+        Specifies the conversion direction. Options are:
+        - 'PETSc2Vec' (default): Convert from FEniCS PETScVector to NumPy array.
+        - 'Vec2PETSc': Convert from NumPy array to FEniCS PETScVector.
 
     Returns
     -------
     Converted vector in the desired format.
 
+    Raises
+    ------
+    ValueError
+        If an invalid flag is provided.
+
+    Examples
+    --------
+        b_petsc = assemble(L)
+        b_array = ConvertVector(b_petsc, flag='PETSc2Vec')
+        b_petsc_again = ConvertVector(b_array, flag='Vec2PETSc')
     """
     if flag == 'PETSc2Vec':
         return np.matrix(vector.get_local())
@@ -76,23 +125,27 @@ def ConvertVector(vector, flag='PETSc2Vec'):
 
 def AssembleSystem(mat_expr, vec_expr, bcs=None):
     """
-    Assemble a linear system from FEniCS expressions.
+    Assemble a linear system from FEniCS expressions and return the matrix and vector in scipy and NumPy formats.
 
     Parameters
     ----------
-    mat_expr : UFL form
-        The left-hand side expression.
-    vec_expr : UFL form
-        The right-hand side expression.
+    mat_expr : UFL Form
+        The left-hand side (LHS) UFL form to assemble.
+    vec_expr : UFL Form
+        The right-hand side (RHS) UFL form to assemble.
     bcs : list of DirichletBC, optional
-        Boundary conditions to apply. Default is None.
+        List of Dirichlet boundary conditions to apply. Default is None.
 
     Returns
     -------
-    A_sparry : scipy.sparse.csr_matrix
+    A_sparse : scipy.sparse.csr_matrix
         Assembled LHS matrix in CSR format.
-    b_vec : numpy array
-        Assembled vector as a numpy matrix.
+    b_vec : numpy.ndarray
+        Assembled RHS vector as a NumPy array.
+
+    Examples
+    --------
+        A_sparse, b_vec = AssembleSystem(a, L, bcs)
     """
     A, b = PETScMatrix(), PETScVector()
     assemble_system(mat_expr, vec_expr, bcs, A_tensor=A, b_tensor=b)
@@ -101,20 +154,23 @@ def AssembleSystem(mat_expr, vec_expr, bcs=None):
 
 def AssembleMatrix(expr, bcs=[]):
     """
-    Assemble a matrix from a UFL expression.
-    
+    Assemble a matrix from a UFL expression and apply boundary conditions.
+
     Parameters
     ----------
-    expr : UFL form
-        The expression to assemble.
+    expr : UFL Form
+        The UFL form to assemble into a matrix.
     bcs : list of DirichletBC, optional
-        Boundary conditions to apply. Default is [].
+        List of Dirichlet boundary conditions to apply. Default is an empty list.
 
     Returns
     -------
-    scipy.sparse.csr_matrix
-    Assembled matrix in the format of Scipy.sparse.csr_matrix.
+    A : scipy.sparse.csr_matrix
+        The assembled matrix in CSR format.
 
+    Examples
+    --------
+        A = AssembleMatrix(a, bcs)
     """
     A = PETScMatrix()  # FEniCS using PETSc for matrix operation
     assemble(expr, tensor=A, keep_diagonal=True)  # store assembled matrix in A
@@ -125,20 +181,23 @@ def AssembleMatrix(expr, bcs=[]):
 
 def AssembleVector(expr, bcs=[]):
     """
-    Assemble a vector from a UFL expression.
+    Assemble a vector from a UFL expression and apply boundary conditions.
 
     Parameters
     ----------
-    expr : UFL form
-        The expression to assemble.
+    expr : UFL Form
+        The linear form to assemble into a vector.
     bcs : list of DirichletBC, optional
-        Boundary conditions to apply. Default is [].
+        List of Dirichlet boundary conditions to apply. Default is an empty list.
 
     Returns
     -------
-    numpy matrix
-    Assembled vector as a numpy matrix.
+    b : numpy.ndarray
+        The assembled vector as a NumPy array.
 
+    Examples
+    --------
+        b = AssembleVector(L, bcs)
     """
     b = PETScVector()  # FEniCS using PETSc for matrix operation
     assemble(expr, tensor=b)  # store assembled matrix in A
@@ -149,13 +208,21 @@ def AssembleVector(expr, bcs=[]):
 
 def TransposePETScMat(A):
     """
-    Transpose a FEniCS PETScMatrix and return the transposed matrix.
+    Transpose a FEniCS PETScMatrix.
 
-    Parameters:
-    - A: A FEniCS PETScMatrix object.
+    Parameters
+    ----------
+    A : PETScMatrix
+        The PETScMatrix to transpose.
 
-    Returns:
-    - A new PETScMatrix that is the transpose of the input matrix.
+    Returns
+    -------
+    transposed_matrix : PETScMatrix
+        The transposed PETScMatrix.
+
+    Examples
+    --------
+        A_T = TransposePETScMat(A)
     """
     # Transpose the PETSc matrix
     petsc_transposed = A.mat().transpose()
@@ -165,25 +232,40 @@ def TransposePETScMat(A):
 
 
 #%%
-# Helper function for complex matrix handling
+"""
+Helper function for complex matrix handling
+"""
+
 
 def handle_complex_matrix(A, flag):
     """
-    Convert a complex matrix into a real block matrix format if needed.
+    Convert a complex matrix into a real block matrix format suitable for real solvers.
 
     Parameters
     ----------
     A : scipy.sparse matrix
-        The matrix to be converted.
-    flag : str, optional
-        'PETSc2Mat' converts from FEniCS PETScMatrix to scipy.sparse.csr_matrix.
-        'Mat2PETSc' converts from scipy.sparse.csr_matrix to FEniCS PETScMatrix.
+        The matrix to be converted. Can be real or complex.
+    flag : str
+        Specifies the conversion direction. Options are:
+        - 'PETSc2Mat': Convert from PETScMatrix to scipy.sparse.csr_matrix.
+        - 'Mat2PETSc': Convert from scipy.sparse.csr_matrix to PETScMatrix.
 
     Returns
     -------
-    TYPE
-        scipy.sparse.csr_matrix or FEniCS PETScMatrix
+    Converted matrix in the desired format, possibly converted to real block matrix form.
 
+    Notes
+    -----
+    If the input matrix is complex, it is converted into a real block matrix of the form:
+
+        [ Re(A)  -Im(A) ]
+        [ Im(A)   Re(A) ]
+
+    This allows the use of real-valued solvers to handle complex matrices.
+
+    Examples
+    --------
+        A_real_block = handle_complex_matrix(A_complex, flag='Mat2PETSc')
     """
     isreal = not np.issubdtype(A.dtype, np.complexfloating)
     if not isreal:  # If complex
@@ -193,27 +275,53 @@ def handle_complex_matrix(A, flag):
         return ConvertMatrix(A, flag=flag)
 
 
+#%%
+"""
+Provide linear solver class for solving linear problems
+"""
+
+
 class SparseLUSolver:
     """
-    Base class for sparse LU solvers to solve A*x = b.
+    Base class for sparse LU solvers to solve linear systems of the form A * x = b.
+
+    This class provides a template for implementing different sparse LU solvers. Subclasses should implement the
+    `_initialize_solver` and `solve` methods for specific solver implementations.
+
+    Attributes
+    ----------
+    shape : tuple
+        Shape of the matrix A.
+    dtype : data-type
+        Data type of the matrix A.
+    isreal : bool
+        True if the matrix A is real-valued, False if complex.
+    operator : scipy.sparse.csc_matrix
+        The matrix A converted to CSC format and as floating-point type.
+    stype: str
+        Type of the linear solver.
+
+    Methods
+    -------
+    solve(b, trans='N')
+        Solve the linear system A * x = b or its variants.
     """
     stype = ''
 
     def __init__(self, A, lusolver):
         """
-        Base class for sparse LU solvers to solve A*x = b.
+        Initialize the sparse LU solver.
 
         Parameters
         ----------
         A : scipy.sparse matrix
-            The matrix to be solved.
+            The matrix A in the linear system A * x = b.
         lusolver : str
-            Type of LU solver to use ('mumps', 'superlu', 'umfpack', 'petsc'). Default is 'mumps'.
+            Type of LU solver to use. Should be specified in subclasses (e.g. 'mumps', 'superlu', 'umfpack', 'petsc')..
 
-        Returns
-        -------
-        None.
-
+        Notes
+        -----
+        This is an abstract base class and should not be instantiated directly.
         """
         self.shape = A.shape
         self.dtype = A.dtype
@@ -231,14 +339,13 @@ class SparseLUSolver:
 
         Raises
         ------
-        ValueError
-            Data type of the matrix.
+        TypeError
+            If the matrix data type is not double precision.
 
         Returns
         -------
         A : scipy.sparse.csc_matrix
             Matrix in CSC format and floating-point type.
-
         """
         if not sp.isspmatrix_csc(A):
             A = sp.csc_matrix(A)
@@ -255,19 +362,18 @@ class SparseLUSolver:
 
         Parameters
         ----------
-        b : numpy array
-            The vector to be checked. 1-D numpy array.
+        b : numpy.ndarray
+            The vector to be checked.
 
         Raises
         ------
         ValueError
-            The shape of the array.
+            If the input is not a 1D array.
 
         Returns
         -------
-        b : numpy array
+        b : numpy.ndarray
             Flattened 1D array.
-            
         """
 
         if np.size(b.shape) == 1 or np.min(b.shape) == 1:
@@ -281,56 +387,88 @@ class SparseLUSolver:
         """
         Abstract solve method to be implemented by subclasses.
 
+        Parameters
+        ----------
+        b : numpy.ndarray
+            Right-hand side vector.
+        trans : str, optional
+            Transpose operation ('N' for none, 'T' for transpose, 'H' for conjugate transpose).
+
+        Returns
+        -------
+        x : numpy.ndarray
+            Solution vector.
+
+        Raises
+        ------
+        NotImplementedError
+            If the method is not implemented in the subclass.
         """
-        pass
+        raise NotImplementedError("Subclasses should implement this!")
 
     solve.stype = stype
 
 
-#%%
-
-
 class FEniCSLU(SparseLUSolver):
     """
-    LU solver using FEniCS functions with PETSc backend.
+    LU solver using FEniCS PETSc backend to solve A * x = b.
+
+    This class utilizes FEniCS PETSc functions to perform LU decomposition and solve linear systems.
+
+    Parameters
+    ----------
+    A : scipy.sparse matrix
+        The matrix A in the linear system A * x = b.
+    lusolver : str, optional
+        Type of LU solver to use within PETSc. Default is 'mumps'.
+
+    Attributes
+    ----------
+    solver : PETScLUSolver.kso
+        The KSP (linear solver) object from PETScLUSolver.
+    u : PETScVector
+        The solution vector.
+
+    Methods
+    -------
+    solve(b, trans='N')
+        Solve the linear system A * x = b or its variants.
+
+    Examples
+    --------
+        solver = FEniCSLU(A)
+        x = solver.solve(b)
     """
     stype = 'mumps'
 
     def __init__(self, A, lusolver='mumps'):
         """
-        LU solver using FEniCS functions with PETSc backend.
+        Initialize the sparse LU solver FEniCS functions with PETSc backend.
 
         Parameters
         ----------
         A : scipy.sparse matrix
-            The matrix to be solved.
-        lusolver : str, optional
+            The matrix A in the linear system A * x = b.
+        lusolver : str
             Type of LU solver to use. The default is 'mumps'. pending ...
-
-        Returns
-        -------
-        None.
-
         """
         super().__init__(A, lusolver)
         self._initialize_solver(self.operator, lusolver)
 
     def _initialize_solver(self, A, lusolver):
         """
-        initialize solver object
+        Initialize the solver object.
 
         Parameters
         ----------
         A : scipy.sparse matrix
             The matrix to be solved.
-            
         lusolver : str
-            Type of LU solver to use. pending ...
+            Type of LU solver to use within PETSc.
 
         Returns
         -------
         None.
-
         """
         A_ops = handle_complex_matrix(A, flag='Mat2PETSc')  # assemble complex matrix into real block matrix
 
@@ -344,20 +482,19 @@ class FEniCSLU(SparseLUSolver):
 
     def __solve(self, A_lu, b):
         """
-        Detailed solve operations for different data types
+        Internal method to solve the linear system.
 
         Parameters
         ----------
-        A_lu : solve method in LU decomposition object
-            Precomputed LU decomposition of A.
-        b : numpy array
-            The RHS vector to solve.
+        A_lu : function
+            Solve method in the LU decomposition object. Precomputed LU decomposition of A.
+        b : numpy.ndarray
+            Right-hand side vector.
 
         Returns
         -------
-        x : numpy array
-            The solution of the linear problem.
-
+        x : numpy.ndarray
+            Solution vector.
         """
         b = self._check_vec(b)
 
@@ -379,20 +516,19 @@ class FEniCSLU(SparseLUSolver):
 
     def solve(self, b, trans='N'):
         """
-        Solve method considering trans argumnet
+        Solve the linear system A * x = b or its variants.
 
         Parameters
         ----------
-        b : numpy array
-            The RHS vector to solve.
+        b : numpy.ndarray
+            Right-hand side vector.
         trans : str, optional
             Transpose operation ('N' for none, 'T' for transpose, 'H' for conjugate transpose). Default is 'N'.
 
         Returns
         -------
-        x : numpy array
-            The solution of the linear problem.
-
+        x : numpy.ndarray
+            Solution vector.
         """
         b = np.asarray(b)
         # low level PETSc interface that accepts PETSc vectors 
@@ -410,44 +546,62 @@ class FEniCSLU(SparseLUSolver):
 
 class PETScLU(SparseLUSolver):
     """
-    LU solver using PETSc in petsc4py.
+    LU solver using PETSc in petsc4py to solve A * x = b.
+
+    Parameters
+    ----------
+    A : scipy.sparse matrix
+        The matrix A in the linear system A * x = b.
+    lusolver : str, optional
+        Type of LU solver to use within PETSc. Default is 'mumps'.
+
+    Attributes
+    ----------
+    solver : PETSc.KSP
+        The KSP (linear solver) object from PETSc.
+    u : PETSc.Vec
+        The solution vector.
+
+    Methods
+    -------
+    solve(b, trans='N')
+        Solve the linear system A * x = b or its variants.
+
+    Examples
+    --------
+        solver = PETScLU(A)
+        x = solver.solve(b)
     """
     stype = 'petsc'
 
     def __init__(self, A, lusolver='mumps'):
         """
-        LU solver using PETSc in petsc4py.
+        LU solver using PETSc in petsc4py to solve A * x = b.
 
         Parameters
         ----------
         A : scipy.sparse matrix
-            The matrix to be solved.
+            The matrix A in the linear system A * x = b.
         lusolver : str, optional
-            Type of LU solver to use. The default is 'mumps'. pending ...
-
-        Returns
-        -------
-        None.
-
+            Type of LU solver to use within PETSc. Default is 'mumps'.
         """
         super().__init__(A, lusolver)
         self._initialize_solver(self.operator, lusolver)
 
     def _initialize_solver(self, A, lusolver):
         """
-        initialize solver object
+        Initialize the solver object.
 
         Parameters
         ----------
         A : scipy.sparse matrix
             The matrix to be solved.
         lusolver : str
-            Type of LU solver to use. pending ...
+            Type of LU solver to use within PETSc.
 
         Returns
         -------
         None.
-
         """
         A_ops = handle_complex_matrix(A, flag='Mat2PETSc')
         self.u = PETSc.Vec().createSeq(A_ops.mat().getSize()[0])
@@ -464,19 +618,19 @@ class PETScLU(SparseLUSolver):
 
     def __solve(self, A_lu, b):
         """
-        Detailed solve operations for different data types
+        Internal method to solve the linear system.
 
         Parameters
         ----------
-        A_lu : solve method in LU decomposition object
-            Precomputed LU decomposition of A.
-        b : numpy array
-            The RHS vector to solve.
+        A_lu : function
+            Solve method in the LU decomposition object. Precomputed LU decomposition of A.
+        b : numpy.ndarray
+            Right-hand side vector.
 
         Returns
         -------
-        x : numpy array
-            The solution of the linear problem.
+        x : numpy.ndarray
+            Solution vector.
 
         """
         b = self._check_vec(b)
@@ -499,20 +653,19 @@ class PETScLU(SparseLUSolver):
 
     def solve(self, b, trans='N'):
         """
-        Solve method considering trans argumnet
+        Solve the linear system A * x = b or its variants.
 
         Parameters
         ----------
-        b : numpy array
-            The RHS vector to solve.
+        b : numpy.ndarray
+            Right-hand side vector.
         trans : str, optional
             Transpose operation ('N' for none, 'T' for transpose, 'H' for conjugate transpose). Default is 'N'.
 
         Returns
         -------
-        x : numpy array
-            The solution of the linear problem.
-
+        x : numpy.ndarray
+            Solution vector.
         """
 
         b = np.asarray(b)
@@ -531,47 +684,60 @@ class PETScLU(SparseLUSolver):
 
 class SuperLU(SparseLUSolver):
     """
-    LU solver using splu in scipy.sparse.linalg
+    LU solver using SuperLU in scipy.sparse.linalg to solve A * x = b.
+
+    Parameters
+    ----------
+    A : scipy.sparse matrix
+        The matrix A in the linear system A * x = b.
+
+    Attributes
+    ----------
+    solver : scipy.sparse.linalg.SuperLU
+        SuperLU from scipy.sparse.linalg.
+
+    Methods
+    -------
+    solve(b, trans='N')
+        Solve the linear system A * x = b or its variants.
+
+    Examples
+    --------
+        solver = SuperLU(A)
+        x = solver.solve(b)
+
     """
     stype = 'superlu'
 
-    def __init__(self, A, lusolver='superlu'):
+    def __init__(self, A):
         """
-        LU solver using splu in scipy.sparse.linalg
+        LU solver using SuperLU in scipy.sparse.linalg to solve A * x = b.
 
         Parameters
         ----------
         A : scipy.sparse matrix
-            The matrix to be solved.
-        lusolver : str, optional
-            Type of LU solver to use. The default is 'superlu'.
-
-        Returns
-        -------
-        None.
-
+            The matrix A in the linear system A * x = b.
         """
-        super().__init__(A, lusolver)
+        super().__init__(A, 'superlu')
         self.solver = spla.splu(self.operator)
 
     def __solve(self, A_lu, b, trans):
         """
-        Detailed solve operations for different data types and trans argumnet
+        Internal method to solve the linear system.
 
         Parameters
         ----------
-        A_lu : solve method in LU decomposition object
-            Precomputed LU decomposition of A.
-        b : numpy array
-            The RHS vector to solve.
+        A_lu : function
+            Solve method in the LU decomposition object. Precomputed LU decomposition of A.
+        b : numpy.ndarray
+            Right-hand side vector.
         trans : str, optional
             Transpose operation ('N' for none, 'T' for transpose, 'H' for conjugate transpose). Default is 'N'.
 
         Returns
         -------
-        x : numpy array
-            The solution of the linear problem.
-
+        x : numpy.ndarray
+            Solution vector.
         """
         b = self._check_vec(b)
 
@@ -583,20 +749,19 @@ class SuperLU(SparseLUSolver):
 
     def solve(self, b, trans='N'):
         """
-        Solve method 
+        Solve the linear system A * x = b or its variants.
 
         Parameters
         ----------
-        b : numpy array
-            The RHS vector to solve.
+        b : numpy.ndarray
+            Right-hand side vector.
         trans : str, optional
-                Transpose operation ('N' for none, 'T' for transpose, 'H' for conjugate transpose). Default is 'N'.
+            Transpose operation ('N' for none, 'T' for transpose, 'H' for conjugate transpose). Default is 'N'.
 
         Returns
         -------
-        x : numpy array
-            The solution of the linear problem.
-
+        x : numpy.ndarray
+            Solution vector.
         """
         b = np.asarray(b)
         return self.__solve(self.solver.solve, b, trans)
@@ -606,46 +771,56 @@ class SuperLU(SparseLUSolver):
 
 class UmfpackLU(SparseLUSolver):
     """
-    LU solver using UMFPACK in scikits.umfpack.
+    LU solver using UMFPACK in scikits.umfpack to solve A * x = b.
+
+    Parameters
+    ----------
+    A : scipy.sparse matrix
+        The matrix A in the linear system A * x = b.
+
+    Attributes
+    ----------
+    solver : umfpack.UmfpackContext
+        UMFPACK solver context.
+
+    Methods
+    -------
+    solve(b, trans='N')
+        Solve the linear system A * x = b or its variants.
+
+    Examples
+    --------
+        solver = UmfpackLU(A)
+        x = solver.solve(b)
     """
     stype = 'umfpack'
 
-    def __init__(self, A, lusolver='umfpack'):
+    def __init__(self, A):
         """
-        LU solver using UMFPACK in scikits.umfpack.
+        LU solver using UMFPACK in scikits.umfpack to solve A * x = b.
 
         Parameters
         ----------
         A : scipy.sparse matrix
-            The matrix to be solved.
-        lusolver : str, optional
-            Type of LU solver to use. The default is 'umfpack'.
-
-        Returns
-        -------
-        None.
-
+            The matrix A in the linear system A * x = b.
         """
-        super().__init__(A, lusolver)
+        super().__init__(A, 'umfpack')
         self.operator.indptr, self.operator.indices = self.operator.indptr.astype(
             np.int64), self.operator.indices.astype(np.int64)
-        self._initialize_solver(self.operator, lusolver)
+        self._initialize_solver(self.operator)
 
-    def _initialize_solver(self, A, lusolver):
+    def _initialize_solver(self, A):
         """
-        initialize solver object
+        Initialize the solver object.
 
         Parameters
         ----------
         A : scipy.sparse matrix
             The matrix to be solved.
-        lusolver : str
-            Type of LU solver to use.
 
         Returns
         -------
         None.
-
         """
         umf = umfpack.UmfpackContext(self._get_umf_family(A))
         # Make LU decomposition.
@@ -693,22 +868,21 @@ class UmfpackLU(SparseLUSolver):
 
     def __solve(self, A_lu, b, trans):
         """
-        Detailed solve operations for different data types and trans argumnet
+        Internal method to solve the linear system.
 
         Parameters
         ----------
-        A_lu : solve method in LU decomposition object 
-            Precomputed LU decomposition of A.
-        b : numpy array
-            The RHS vector to solve.
+        A_lu : function
+            Solve method in the LU decomposition object. Precomputed LU decomposition of A.
+        b : numpy.ndarray
+            Right-hand side vector.
         trans : str, optional
             Transpose operation ('N' for none, 'T' for transpose, 'H' for conjugate transpose). Default is 'N'.
 
         Returns
         -------
-        x : numpy array
-            The solution of the linear problem.
-
+        x : numpy.ndarray
+            Solution vector.
         """
         b = self._check_vec(b)
         sys_para = {'N': umfpack.UMFPACK_A, 'T': umfpack.UMFPACK_At, 'H': umfpack.UMFPACK_At}
@@ -727,20 +901,19 @@ class UmfpackLU(SparseLUSolver):
 
     def solve(self, b, trans='N'):
         """
-        Solve method
+        Solve the linear system A * x = b or its variants.
 
         Parameters
         ----------
-        b : numpy array
-            The RHS vector to solve.
+        b : numpy.ndarray
+            Right-hand side vector.
         trans : str, optional
             Transpose operation ('N' for none, 'T' for transpose, 'H' for conjugate transpose). Default is 'N'.
 
         Returns
         -------
-        x : numpy array
-            The solution of the linear problem.
-
+        x : numpy.ndarray
+            Solution vector.
         """
         b = np.asarray(b)
         return self.__solve(self.solver.solve, b, trans)
@@ -750,16 +923,46 @@ class UmfpackLU(SparseLUSolver):
 
 #%%
 """
-This class provides classes that define linear operators for solving linear equations
+Provide linear operator class for solving linear equations
 """
 
 
 class InverseMatrixOperator(spla.LinearOperator):
     """
-    Inverse operator for iterative solvers requiring matrix-vector products A^-1*b 
-    where A is a sparse matrix and b is a dense vector. This class serves as an 
-    abstract interface between iterative solvers and matrix-like objects.
-    Supports various LU solvers.
+    Inverse operator for iterative solvers requiring matrix-vector products A^{-1} * b.
+
+    This class provides an interface to represent the inverse of a matrix A as a linear operator,
+    allowing its use in iterative solvers that require only matrix-vector products.
+
+    Parameters
+    ----------
+    A : scipy.sparse matrix
+        The matrix A whose inverse is to be represented.
+    A_lu : optional
+        Precomputed LU decomposition of A. If not provided, it will be computed.
+    Mat : dict, optional
+        Additional matrix to include in the form A^{trans} + Mat, where Mat = U * V^T.
+    lusolver : str, optional
+        Type of LU solver to use ('mumps', 'superlu', 'umfpack', 'petsc'). Default is 'mumps'.
+    trans : str, optional
+        Specifies whether to solve with A or its transpose/conjugate transpose. Options are:
+        - 'N': No transpose (default).
+        - 'T': Transpose.
+        - 'H': Conjugate transpose.
+    echo : bool, optional
+        If True, prints the number of times the linear system has been solved. Default is False.
+
+    Methods
+    -------
+    _matvec(b)
+        Compute the matrix-vector product A^{-1} * b.
+    _rmatvec(b)
+        Compute the adjoint matrix-vector product (A^H)^{-1} * b.
+
+    Examples
+    --------
+        invA = InverseMatrixOperator(A)
+        x = invA @ b  # Equivalent to solving A * x = b
     """
 
     def __init__(self, A, A_lu=None, Mat=None, lusolver='mumps', trans='N', echo=False):
@@ -769,21 +972,20 @@ class InverseMatrixOperator(spla.LinearOperator):
         Parameters
         ----------
         A : scipy.sparse matrix
-            The matrix to invert or solve.
-        A_lu : LU decomposition object, optional
-            Precomputed LU decomposition of A. Default is None.
-        Mat : dict with real matrices U, V, optional
-            The matrix/dict to formulate A^trans + Mat, where Mat = U * V'. Default is None.
+            The matrix A whose inverse is to be represented.
+        A_lu : optional
+            Precomputed LU decomposition of A. If not provided, it will be computed.
+        Mat : dict, optional
+            Additional matrix to include in the form A^{trans} + Mat, where Mat = U * V^T.
         lusolver : str, optional
             Type of LU solver to use ('mumps', 'superlu', 'umfpack', 'petsc'). Default is 'mumps'.
         trans : str, optional
-            Transpose operation ('N' for none, 'T' for transpose, 'H' for conjugate transpose). Default is 'N'.
+            Specifies whether to solve with A or its transpose/conjugate transpose. Options are:
+            - 'N': No transpose (default).
+            - 'T': Transpose.
+            - 'H': Conjugate transpose.
         echo : bool, optional
             If True, prints the number of times the linear system has been solved. Default is False.
-
-        Returns
-        -------
-        None.
 
         """
         self.shape = A.shape
@@ -794,6 +996,7 @@ class InverseMatrixOperator(spla.LinearOperator):
         self.trans = trans
         self.Mat = Mat
         self.solve = self._initialize_solver(A, A_lu, lusolver)
+        super().__init__(dtype=self.dtype, shape=self.shape)  # remains testing
         # if self.Mat is not None:
         #     self._initialize_woodbury()
 
@@ -932,7 +1135,7 @@ class InverseMatrixOperator(spla.LinearOperator):
                 else:
                     return A_lu(b, trans)
             except:
-                raise ValueError("LU factorized object 'A_lu' doesn't have parameter 'trans'")
+                raise ValueError("LU factorized object 'A_lu' doesn't support 'trans' parameter.")
         else:
             ValueError(f"Incompatible trans parameter: {trans}")
 
@@ -957,7 +1160,8 @@ class InverseMatrixOperator(spla.LinearOperator):
             print(f"Number of the linear system solved: {self.count}")
         bk = self.solve(b, self.trans)
 
-        return bk if self.Mat is None else self._woodbury_solve(bk, self.trans)  # bk - self.Mat['U'] @ (self.Mat['V'] @ bk)
+        return bk if self.Mat is None else self._woodbury_solve(bk,
+                                                                self.trans)  # bk - self.Mat['U'] @ (self.Mat['V'] @ bk)
 
     def _rmatvec(self, b):
         """
@@ -995,3 +1199,5 @@ class InverseMatrixOperator(spla.LinearOperator):
                 for i in range(self.Mat['U'].shape[1]):
                     Uk[:, i] = np.conj(self.solve(np.conj(self.Mat['U'][:, i]), 'N'))
                 return woodbury_solver(Uk, self.Mat['V'], bk)
+        else:
+            raise ValueError(f"Incompatible trans parameter: {self.trans}")

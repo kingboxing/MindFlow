@@ -1,14 +1,83 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Sat Sep 14 22:19:23 2024
+This module provides the `LQESolver` class for solving the Linear Quadratic Estimation (LQE) problem for index-2 systems,
+utilizing the M.E.S.S. (Matrix Equation Sparse Solver) library for solving generalized Riccati equations.
 
-@author: bojin
+The LQE problem involves designing an optimal estimator (observer) for a given system, minimizing the estimation error covariance.
+The `LQESolver` class extends the `GRiccatiDAE2Solver` to solve the estimator Riccati equation and compute the Kalman filter gain.
 
-Linear Quadratic Estimation (LQE) Solver
+Classes
+-------
+- LQESolver:
+    Solves the LQE problem for index-2 systems and computes the Kalman filter gain.
 
-This module provides the LQESolver class for solving the LQE problem for Index-2 systems,
-utilizing the M.E.S.S. library for solving generalized Riccati equations.
+Dependencies
+------------
+- FEniCS
+- NumPy
+- SciPy
+- M.E.S.S. library (Python or MATLAB version)
+- joblib
+- multiprocessing
+
+Ensure that all dependencies are installed and properly configured.
+
+Examples
+--------
+Typical usage involves creating an instance of `LQESolver` with a state-space model, setting sensor noise and disturbance parameters,
+solving the LQE problem, and computing the estimator gain.
+
+```python
+from FERePack.OptimControl.LQESolver import LQESolver
+from FERePack.OptimControl import StateSpaceDAE2
+
+# Define mesh and parameters
+mesh = ...  # Define your mesh
+Re = 100.0
+
+# Initialize the state-space model
+model = StateSpaceDAE2(mesh, Re=Re, order=(2, 1), dim=2)
+
+# Set boundary conditions
+model.set_boundary(bc_list)
+model.set_boundarycondition(bc_list)
+
+# Set base flow
+model.set_baseflow(ic=base_flow_function)
+
+# Define input and output vectors
+input_vec = ...  # Define your input vector (actuation)
+output_vec = ...  # Define your output vector (measurement)
+
+# Assemble the state-space model
+model.assemble_model(input_vec=input_vec, output_vec=output_vec)
+
+# Initialize the LQE solver with the model
+lqe_solver = LQESolver(model, method='nm', backend='python')
+
+# Set sensor noise parameters
+lqe_solver.sensor_noise(alpha=1.0)
+
+# Set disturbance parameters
+disturbance_matrix = ...  # Define your disturbance matrix
+lqe_solver.disturbance(B=disturbance_matrix, beta=0.1)
+
+# Solve the LQE problem
+lqe_solver.solve()
+
+# Compute the estimator (Kalman filter) gain
+estimator_gain = lqe_solver.estimator()
+```
+
+Notes
+--------
+
+- The LQESolver class solves the estimator Riccati equation to compute the optimal observer gain.
+- It supports iterative solving using accumulation methods for large-scale systems.
+- The class can interface with both Python and MATLAB versions of the M.E.S.S. library.
+- Sensor noise and disturbance parameters can be configured to model realistic measurement and process noises.
+
 """
 
 from ..Deps import *
@@ -20,7 +89,54 @@ from ..Interface.Py2Mat import start_matlab
 
 
 class LQESolver(GRiccatiDAE2Solver):
+    """
+    Solves the Linear Quadratic Estimation (LQE) problem for index-2 systems, utilizing the M.E.S.S. library for solving generalized Riccati equations.
 
+    The LQE problem aims to design an optimal estimator (observer) that minimizes the estimation error covariance. This class extends the `GRiccatiDAE2Solver` to handle the estimator Riccati equation and compute the Kalman filter gain.
+
+    Parameters
+    ----------
+    model : dict or StateSpaceDAE2
+        State-space model or dictionary containing system matrices.
+    method : str, optional
+        Method used to solve generalized Riccati equations ('nm' or 'radi'). Default is 'nm'.
+    backend : str, optional
+        Backend used to solve generalized Riccati equations ('python' or 'matlab'). Default is 'python'.
+
+    Attributes
+    ----------
+    eqn : dict
+        Dictionary containing system matrices and parameters.
+    param : dict
+        Default parameters for the Riccati solver.
+    facZ : numpy.ndarray or dict
+        Solution factor of the Riccati equation.
+    status : dict
+        Status information from the solver.
+    sys_energy : function
+        Function to compute the squared H2 norm of the system.
+    gain_energy : function
+        Function to compute the contribution of the estimator on the H2 norm.
+
+    Methods
+    -------
+    sensor_noise(alpha)
+        Set the magnitude of sensor noises modeled as uncorrelated zero-mean Gaussian white noise.
+    disturbance(B, beta=None)
+        Set the square root of the random disturbance covariance matrix.
+    estimator()
+        Compute the estimator (Kalman filter) gain from the solution of the LQE problem.
+    solve()
+        Solve the LQE problem once and return results.
+    iter_solve(num_iter=1, MatQ=None, pid=None, Kr=None, mode=0)
+        Solve the LQE problem iteratively using accumulation method.
+
+    Notes
+    -----
+    - The class supports both low-rank and full-rank solutions, depending on the method used.
+    - The computed estimator gain can be applied to design observers for state estimation.
+    - Supports iterative solving for large-scale systems where resources are limited.
+    """
     def __init__(self, model, method='nm', backend='python'):
         """
         Initialize the LQE solver with a state-space model.
@@ -30,9 +146,14 @@ class LQESolver(GRiccatiDAE2Solver):
         model : dict or StateSpaceDAE2
             State-space model or dictionary containing system matrices.
         method : str, optional
-            Method used to solve generalized Riccati equations. Default is 'nm'.
+            Method used to solve generalized Riccati equations ('nm' or 'radi'). Default is 'nm'.
         backend : str, optional
-            Backend used to solve generalized Riccati equations. Default is 'python'.
+            Backend used to solve generalized Riccati equations ('python' or 'matlab'). Default is 'python'.
+
+        Notes
+        -----
+        - Initializes default parameters specific to the LQE problem.
+        - Sets up sensor noise with default magnitude.
         """
         self._k0 = BernoulliFeedback(model)
         super().__init__(model, method, backend)
@@ -41,9 +162,13 @@ class LQESolver(GRiccatiDAE2Solver):
 
     def _lqe_default_parameters(self):
         """
-        Set default parameters based on the method and backend.
+        Set default parameters specific to the LQE problem based on the method and backend.
 
-        pending for further optimization
+        Notes
+        -----
+        - Configures the solver type and equation type appropriate for LQE.
+        - For LQE, the solver type is set to 'lqe_solver', and the equation type is 'N' (standard).
+        - Pending for further optimization of parameters
         """
         backend = self.param['backend']
         self.param['solver_type'] = 'lqe_solver'
@@ -51,22 +176,38 @@ class LQESolver(GRiccatiDAE2Solver):
             self.param['riccati_solver']['type'] = 0
         elif backend == 'matlab':
             self.param['riccati_solver']['eqn']['type'] = 'N'
+        else:
+            raise ValueError('Backend must be either "python" or "matlab".')
 
     def _feedback_pencil_deprecated(self, U, V, mode):
         """
-        Assemble the feedback pencil.
-        Matrix A can have the form A = Ã + U*V' if U (eqn.U) and V (eqn.V) are provided U and V are dense (n x m3)
-        matrices and should satisfy m3 << n
+       Assemble the feedback pencil for the system.
 
         Parameters
         ----------
-        U : dense (n x m3) matrix
-            for feedback pencil.
-        V : dense (n x m3) matrix
-            for feedback pencil.
-        mode : int, optional
-            Mode of assembling feedback pencil. Default is 0.
+        U : numpy.ndarray
+            Feedback matrix U (n x m3).
+        V : numpy.ndarray
+            Feedback matrix V (n x m3).
+        mode : int
+            Mode of assembling feedback pencil.
+            - If mode = 0, feedback is accumulated directly to the state matrix.
+            - If mode = 1 and backend is 'matlab', feedback is updated to U and V matrices in `self.eqn`.
 
+        Notes
+        -----
+        - It has been deprecated. Use `self._feedback_pencil` inherited from 'GRiccatiDAE2Solver' instead.
+        - Modifies the system matrices based on the feedback provided.
+        - Supports different modes of applying feedback depending on the backend.
+        - Matrix A can have the form A = Ã + U * V^T if U (eqn.U) and V (eqn.V) are provided U and V are dense (n x m3) matrices and should satisfy m3 << n.
+        - In LQE (e.g. sol_type = 'N') problem, V could always be the measurement matrix C, so U can be only added directly.
+        - In LQR (e.g. sol_type = 'T') problem, U could always be the actuation matrix B, so V can be only added directly.
+        - Otherwise, U, V stacked, and dimensions increase
+
+        Raises
+        ------
+        ValueError
+            If an invalid mode or backend is provided.
         """
         U = -U # negative feedback
         if mode == 0:
@@ -94,6 +235,11 @@ class LQESolver(GRiccatiDAE2Solver):
     def init_feedback(self):
         """
         Initialize the feedback using Bernoulli feedback.
+
+        Notes
+        -----
+        - Computes an initial stabilizing feedback gain using the Bernoulli equation.
+        - This initial feedback is used to improve convergence of the Riccati solver.
         """
         method = self.param['method']
         backend = self.param['backend']
@@ -105,14 +251,24 @@ class LQESolver(GRiccatiDAE2Solver):
 
     def sensor_noise(self, alpha):
         """
-        Set the magnitude of sensor noises that are modeled as uncorrelated zero-mean Gaussian white noise.
+        Set the magnitude of sensor noises modeled as uncorrelated zero-mean Gaussian white noise.
 
-        noise weight matrix: Q^{-1/2} in M.E.S.S or }V^{-1/2} in the paper
+        The sensor noise affects the measurement covariance matrix, influencing the estimator design.
 
         Parameters
         ----------
-        alpha : int, float, or 1D array
-            Magnitude of sensor noise.
+        alpha : float or array-like
+            Magnitude of sensor noise. Can be a scalar or an array specifying noise levels for each sensor.
+
+        Raises
+        ------
+        TypeError
+            If the provided `alpha` is of an invalid type.
+
+        Notes
+        -----
+        - Increases in sensor noise magnitude typically result in decreased estimator gain.
+        - The noise weight matrix corresponds to `Q^{-1/2}` in M.E.S.S. or `V^{-1/2}` in literature.
         """
         n = self.eqn['C'].shape[0]
         if isinstance(alpha, (int, np.integer, float, np.floating)):
@@ -134,10 +290,23 @@ class LQESolver(GRiccatiDAE2Solver):
 
         Parameters
         ----------
-        B : 1D array or ndarray
-            Disturbance/Input matrix to set.
-        beta : int, float, or 1D array
-            Magnitude of disturbances. Default is None.
+        B : numpy.ndarray
+            Disturbance (input) matrix to set. Should have shape compatible with the system.
+        beta : float or array-like, optional
+            Magnitude of disturbances. Can be a scalar or an array specifying disturbance levels. Default is None.
+
+        Raises
+        ------
+        ValueError
+            If the provided disturbance matrix `B` has an invalid shape.
+        TypeError
+            If the provided `beta` is of an invalid type.
+
+        Notes
+        -----
+        - The disturbance affects the process noise covariance, influencing the estimator design.
+        - Larger disturbances typically result in increased estimator gain to compensate for process noise.
+        - The square root of disturbance covariance matrix corresponds to `R^{-1/2}` in M.E.S.S..
         """
         if B.shape[0] != self.eqn['B'].shape[0]:
             raise ValueError('Invalid shape of input matrix B')
@@ -160,16 +329,23 @@ class LQESolver(GRiccatiDAE2Solver):
 
     def estimator(self):
         """
-        Compute the estimator from the solution of the LQE problem.
+        Compute the estimator (Kalman filter) gain from the solution of the LQE problem.
 
+        The estimator gain is computed as:
+        ```
         Kf = X * C' * Q^{-1} = Z * Z' * C' * Q^{-1}
-
-        K = (E * Kf)' where K is returned by self.iter_solver and M.E.S.S solver
+        K = (E * Kf)', where K is weighted gain returned by self.iter_solver and M.E.S.S solver
+        ```
 
         Returns
         -------
-        Kf : numpy array
+        Kf : numpy.ndarray
             Kalman filter gain matrix (H2 estimator).
+
+        Notes
+        -----
+        - The computed gain can be used to design an observer for state estimation.
+        - Handles different formulations based on backend and solver options.
         """
         facZ = self._solution_factor()
         if facZ is None:
@@ -185,6 +361,15 @@ class LQESolver(GRiccatiDAE2Solver):
     def solve(self):
         """
         Solve the LQE problem once and return results.
+
+        Returns
+        -------
+        None
+
+        Notes
+        -----
+        - Calls `iter_solve` with `num_iter=1`.
+        - Suitable for systems where the problem can be solved in a single iteration.
         """
 
         return self.iter_solve(num_iter=1)
@@ -197,30 +382,45 @@ class LQESolver(GRiccatiDAE2Solver):
         ----------
         num_iter : int, optional
             Number of iterations to perform. Default is 1.
-        MatQ : sparse matrix, optional
-            Factor of the weight matrix used to evaluate the H2 norm. Default is None.
+        MatQ : scipy.sparse matrix, optional
+            Square-root/Cholesky factor of the weight matrix used to evaluate the H2 norm. Default is None.
         pid : int, optional
             Number of processes to use for H2 norm computation. Default is None.
-        Kr : numpy array, optional
-            Linear Quadratic Regulator matrix. Default is None.
+        Kr : numpy.ndarray, optional
+            Linear Quadratic Regulator (LQR) gain matrix. Default is None.
         mode : int, optional
-            Method to perform accumulation method. Default is 0 (i.e. direct assemble).
-            if mode = 1 and backend = matlab, utilise M.M.E.S.S. formulation A = Ã + U*V'
+            Method to perform accumulation method. Default is 0 (i.e., direct assemble).
+            If `mode=1` and `backend='matlab'`, utilizes M-M.E.S.S. formulation A = Ã + U*V'.
 
-        Return a dict with following keys:
-        ----------
-        K : numpy array
-            H2 estimator (Kalman Filter).
-        status : list
-            Status of each iteration.
-        size: tuple or list
-            Size of solution factor at each iteration.
-        alloc_mode : list
-            The number of disturbance modes allocated to each iteration.
-        sqnorm_sys : float
-            Square of H2 norm.
-        sqnorm_lqr : numpy array
-            LQR norm, if computed.
+        Returns
+        -------
+        output : dict
+            Dictionary containing results with keys:
+            - 'K': numpy.ndarray, Weighted H2 estimator (Kalman filter) gain.
+            - 'status': list, Status of each iteration.
+            - 'size': list, Size of solution factor at each iteration.
+            - 'alloc_mode': list, Number of disturbance modes allocated to each iteration.
+            - 'sqnorm_sys': float, Squared H2 norm of the system.
+            - 'sqnorm_lqr': numpy.ndarray, LQR norm, if computed.
+
+        Notes
+        -----
+        - For large-scale systems, iterative solving can help manage computational resources.
+        - Accumulates feedback and performance metrics over iterations.
+        - Uses parallel processing for H2 norm computation when `pid` is specified.
+
+        Examples
+        --------
+        ```python
+        # Solve the LQE problem iteratively
+        results = lqe_solver.iter_solve(num_iter=5, MatQ=MatQ, pid=4)
+
+        # Access the estimator gain
+        estimator_gain = results['K']
+
+        # Access the squared H2 norm
+        h2_norm_squared = results['sqnorm_sys']
+        ```
         """
         # get original matrices
         B = self.eqn['B'].copy()

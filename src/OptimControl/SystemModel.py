@@ -1,14 +1,65 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Sat Sep  7 20:38:07 2024
+This module provides the `StateSpaceDAE2` class to build and assemble the state-space model of linearized Navier-Stokes equations of DAE (Differential-Algebraic Equation) type II.
 
-@author: bojin
+The state-space model represents the linearized fluid dynamics system in a form suitable for control design and analysis, including Riccati solvers and eigenvalue analysis. It constructs the system matrices by properly handling boundary conditions and subspace projections, facilitating tasks such as controller synthesis and stability analysis.
 
-StateSpaceDAE2 Module
+Classes
+-------
+- StateSpaceDAE2:
+    Assembles the state-space model of linearized Navier-Stokes equations (DAE2 type).
 
-This module provides the StateSpaceDAE2 class to build and assemble the state-space model of
-linearized Navier-Stokes equations (DAE2 type).
+Dependencies
+------------
+- FEniCS
+- NumPy
+- SciPy
+
+Ensure that all dependencies are installed and properly configured.
+
+Examples
+--------
+Typical usage involves creating an instance of `StateSpaceDAE2`, setting up the problem domain, boundary conditions, base flow, and assembling the state-space model.
+
+```python
+from FERePack.OptimControl.SystemModel import StateSpaceDAE2
+
+# Define mesh and parameters
+mesh = ...  # Define your mesh
+Re = 100.0
+
+# Initialize the state-space model
+model = StateSpaceDAE2(mesh, Re=Re, order=(2, 1), dim=2)
+
+# Set boundary conditions
+model.set_boundary(bc_list)
+model.set_boundarycondition(bc_list)
+
+# Set base flow
+model.set_baseflow(ic=base_flow_function)
+
+# Define input and output vectors
+input_vec = ...  # Define your input vector (actuation)
+output_vec = ...  # Define your output vector (measurement)
+
+# Assemble the state-space model
+model.assemble_model(input_vec=input_vec, output_vec=output_vec)
+
+# Access the assembled matrices
+A = model.A
+M = model.M
+B = model.B
+C = model.C
+G = model.G
+Z = model.Z
+```
+
+Notes
+--------
+- The class handles the construction of the state-space model by properly excluding boundary conditions and projecting onto the appropriate subspaces.
+- The resulting model is suitable for use with Riccati solvers, control design, and stability analysis.
+- The state-space model is of DAE type II, which includes algebraic constraints due to incompressibility (divergence-free condition).
 """
 
 from ..Deps import *
@@ -21,16 +72,58 @@ from ..Params.Params import DefaultParameters
 
 class StateSpaceDAE2(FreqencySolverBase):
     """
-    Assemble state-space model of linearized Navier-Stokes equations (DAE2 type)
-    in the following block form.
-    
-    The model structure is:
-    | M   0 | d(|vel|     = | A    G  | |vel| + | B | u
-    | 0   0 |   |pre|)/dt   | GT  Z=0 | |pre|   | 0 |
-    
-    y = | C   0 | |vel|
-                  |pre|
-                  
+    Assembles the state-space model of linearized Navier-Stokes equations (DAE2 type).
+
+    The model structure is given by the following block form:
+
+    | M   0 | d/dt [vel] = | A    G  | [vel] + | B | u
+    | 0   0 |      [pre]   | G^T  0  | [pre]   | 0 |
+
+    y = [ C   0 ] [vel]
+                  [pre]
+
+    where:
+    - `M` is the mass matrix.
+    - `A` is the system matrix.
+    - `G` and `G^T` represent the gradient and divergence operators.
+    - `vel` and `pre` are the velocity and pressure variables.
+    - `B` is the input matrix.
+    - `C` is the output matrix.
+    - `u` is the input (actuation).
+    - `y` is the output (measurement).
+
+    Parameters
+    ----------
+    mesh : dolfin.Mesh
+        The computational mesh of the flow domain.
+    Re : float, optional
+        The Reynolds number of the flow. Default is None.
+    order : tuple of int, optional
+        The polynomial orders of the finite element spaces for velocity and pressure, respectively. Default is (2, 1).
+    dim : int, optional
+        Dimension of the flow field. Default is 2.
+    constrained_domain : dolfin.SubDomain, optional
+        A constrained domain for applying periodic boundary conditions or other constraints. Default is None.
+
+    Attributes
+    ----------
+    model : dict
+        A dictionary containing the assembled state-space model matrices and related data.
+    param : dict
+        Default parameters for the state-space model.
+
+    Methods
+    -------
+    assemble_model(input_vec=None, output_vec=None, Re=None, Mat=None, sz=None, reuse=False)
+        Assemble the complete state-space model.
+    validate_eigs(k=3, sigma=0.0, param={})
+        Perform eigen-decomposition on the state-space model.
+
+    Notes
+    -----
+    - The class handles the exclusion of boundary condition rows and columns from the system matrices.
+    - Constructs prolongation matrices to project onto velocity and pressure subspaces.
+    - Suitable for use with Riccati solvers and other control design tools.
     """
 
     def __init__(self, mesh, Re=None, order=(2, 1), dim=2, constrained_domain=None):
@@ -39,16 +132,16 @@ class StateSpaceDAE2(FreqencySolverBase):
 
         Parameters
         ----------
-        mesh : Mesh
-            The mesh of the flow field.
+        mesh : dolfin.Mesh
+            The computational mesh of the flow domain.
         Re : float, optional
-            Reynolds number. Default is None.
-        order : tuple, optional
-            Order of finite elements. Default is (2, 1).
+            The Reynolds number of the flow. Default is None.
+        order : tuple of int, optional
+            The polynomial orders of the finite element spaces for velocity and pressure, respectively. Default is (2, 1).
         dim : int, optional
             Dimension of the flow field. Default is 2.
-        constrained_domain : SubDomain, optional
-            Constrained domain defined in FEniCS. Default is None.
+        constrained_domain : dolfin.SubDomain, optional
+            A constrained domain for applying periodic boundary conditions or other constraints. Default is None.
         """
         super().__init__(mesh, Re, order, dim, constrained_domain)
         self.model = {}
@@ -56,12 +149,12 @@ class StateSpaceDAE2(FreqencySolverBase):
 
     def _initialize_prolmat(self):
         """
-        Initialize prolongation matrices and store them in self.model['Prol'].
+        Initialize prolongation matrices and store them in `self.model['Prol']`.
 
         This includes:
-        - Prolongation matrix to exclude boundary conditions (P_nbc)
-        - Prolongation matrix to exclude velocity subspace and boundary conditions (P_nvel_bc)
-        - Prolongation matrix to exclude pressure subspace and boundary conditions (P_npre_bc)
+        - Prolongation matrix to exclude boundary conditions (`P_nbc`).
+        - Prolongation matrix to exclude velocity subspace and boundary conditions (`P_nvel_bc`).
+        - Prolongation matrix to exclude pressure subspace and boundary conditions (`P_npre_bc`).
         """
 
         # prolongation matrix without columns represnet boundary conditions
@@ -79,7 +172,8 @@ class StateSpaceDAE2(FreqencySolverBase):
     def _initialize_statespace(self):
         """
         Initialize the matrices of linearized Navier-Stokes equations for the state-space model.
-        The matrices are constructed by excluding boundary condition rows and columns.
+
+        The matrices are constructed by excluding boundary condition rows and columns and projecting onto the appropriate subspaces.
         """
         # RHS and LHS matrices (linearized Navier-Stokes)
         State = -self.pencil[0]
@@ -99,9 +193,10 @@ class StateSpaceDAE2(FreqencySolverBase):
         """
         Extract block matrices for the state-space model.
 
-        This creates the following structure:
-        Mass = | M   0 |      State = | A   G  |
-               | 0   0 |              | GT  Z=0|
+        Constructs the following structure:
+
+        Mass = | M   0 |      State = | A    G  |
+               | 0   0 |              | G^T  Z=0|
 
         Parameters
         ----------
@@ -139,8 +234,10 @@ class StateSpaceDAE2(FreqencySolverBase):
         """
         Assemble state-space matrices from block matrices.
 
-        Mass = E_full = | M   0 |     State = A_full =  | A   G  |
-                        | 0   0 |                       | GT  Z=0|
+        Constructs the full system matrices:
+
+        Mass = E_full = | M   0 |     State = A_full = | A    G  |
+                        | 0   0 |                      | G^T  Z=0|
         """
         # assemble block matrix of mass and state matrices
         A_full, E_full = assemble_dae2(self.model)
@@ -153,10 +250,10 @@ class StateSpaceDAE2(FreqencySolverBase):
 
         Parameters
         ----------
-        input_vec : numpy array, optional
-            Input/actuation vector in the velocity subspace for the state-space model. Default is None.
-        output_vec : numpy array, optional
-            Output/measurement vector of velocity subspace for the state-space model. Default is None.
+        input_vec : numpy.ndarray, optional
+            Input (actuation) vector in the velocity subspace for the state-space model. Default is None.
+        output_vec : numpy.ndarray, optional
+            Output (measurement) vector in the velocity subspace for the state-space model. Default is None.
         """
 
         P_nbc = self.model['Prol'][0]
@@ -174,10 +271,14 @@ class StateSpaceDAE2(FreqencySolverBase):
 
     def _assign_attr(self):
         """
-        Assign attributions for Riccato Solver.
+        Assign attributes for the Riccati solver and other analyses.
 
-        Mass = E_full = | M   0 |     State = A_full =  | A   G  |
-                        | 0   0 |                       | GT  Z=0|
+        Attributes assigned include:
+        - A, M, G, Z: System matrices.
+        - B, C: Input and output matrices.
+        - A_full, E_full: Assembled full system matrices (if available).
+        - U, V: Feedback matrices (if available).
+        - Q, R: Weighting matrices for control design (if available).
         """
         self.A = self.model['A']
         self.M = self.model['M']
@@ -201,18 +302,28 @@ class StateSpaceDAE2(FreqencySolverBase):
 
         Parameters
         ----------
-        input_vec : numpy array, optional
-            Input/actuation vector for the state-space model. Default is None.
-        output_vec : numpy array, optional
-            Output/measurement vector for the state-space model. Default is None.
+        input_vec : numpy.ndarray, optional
+            Input (actuation) vector for the state-space model. Default is None.
+        output_vec : numpy.ndarray, optional
+            Output (measurement) vector for the state-space model. Default is None.
         Re : float, optional
-            Reynolds number.
-        Mat : scipy.sparse matrix or dict with Mat = U * V, optional
-            Feedback matrix (negative feedback).
+            Reynolds number. If provided, updates the Reynolds number before assembling. Default is None.
+        Mat : scipy.sparse matrix or dict with keys 'U' and 'V', optional
+            Feedback matrix (negative feedback). Can be provided as a sparse matrix or a dictionary containing 'U' and 'V' (Mat = U * V^T). Default is None.
         sz : complex or tuple/list of complex, optional
             Spatial frequency parameters for quasi-analysis of the flow field. Default is None.
         reuse : bool, optional
-            Whether to reuse the previous state-space model. Default is False.
+            If True, reuses previous computations (e.g., system matrices) if available. Default is False.
+
+        Returns
+        -------
+        None
+
+        Notes
+        -----
+        - This method assembles the system matrices, input/output matrices, and assigns attributes for further analysis.
+        - If `reuse` is False, the system is reassembled from scratch.
+        - Handles both sparse matrix feedback and low-rank feedback represented by 'U' and 'V'.
         """
 
         if Re is not None:
@@ -224,13 +335,13 @@ class StateSpaceDAE2(FreqencySolverBase):
                 self._assemble_pencil(Mat)
             elif isinstance(Mat, dict) and 'U' in Mat and 'V' in Mat:
                 self._assemble_pencil()
-                self.model.update({'U': -Mat['U'], 'V': Mat['V']})  # update Mat={'U': U, 'V':V}
+                self.model.update({'U': -Mat['U'], 'V': Mat['V']})  # for A + U * V' in MMESS
             else:
                 raise TypeError(
                     'Invalid Type of feedback matrix Mat (Can be a sparse matrix or a dict containing U and V).')
             self._initialize_prolmat()
             self._initialize_statespace()
-            #self._assemble_statespace()
+            # self._assemble_statespace()  # Uncomment if full matrices are needed
             self._assemble_IO(input_vec, output_vec)
             self._assign_attr()
 
@@ -242,10 +353,22 @@ class StateSpaceDAE2(FreqencySolverBase):
         ----------
         k : int, optional
             Number of eigenvalues to compute. Default is 3.
-        sigma : float, optional
+        sigma : float or complex, optional
             Shift-invert parameter. Default is 0.0.
         param : dict, optional
             Additional parameters for the eigenvalue solver.
+
+        Returns
+        -------
+        vals : numpy.ndarray
+            Computed eigenvalues.
+        vecs : numpy.ndarray
+            Corresponding eigenvectors.
+
+        Notes
+        -----
+        - This method assembles the full system matrices and performs eigen-decomposition.
+        - Useful for validating the assembled model and analyzing system stability.
         """
 
         # Set up matrices

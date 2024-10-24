@@ -1,14 +1,84 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Sat Sep 14 22:19:50 2024
+This module provides the `LQRSolver` class for solving the Linear Quadratic Regulator (LQR) problem for index-2 systems,
+utilizing the M.E.S.S. (Matrix Equation Sparse Solver) library to solve generalized Riccati equations.
 
-@author: bojin
+The LQR problem involves designing an optimal state feedback controller that minimizes a quadratic cost function,
+typically balancing control effort against state regulation performance. The `LQRSolver` class extends the
+`GRiccatiDAE2Solver` to solve the regulator Riccati equation and compute the optimal control gain.
 
-Linear Quadratic Regulator (LQR) Solver
+Classes
+-------
+- LQRSolver:
+    Solves the LQR problem for index-2 systems and computes the optimal control gain.
 
-This module provides the LQRSolver class for solving the LQR problem for Index-2 systems,
-utilizing the M.E.S.S. library to solve generalized Riccati equations.
+Dependencies
+------------
+- FEniCS
+- NumPy
+- SciPy
+- M.E.S.S. library (Python or MATLAB version)
+- joblib
+- multiprocessing
+
+Ensure that all dependencies are installed and properly configured.
+
+Examples
+--------
+Typical usage involves creating an instance of `LQRSolver` with a state-space model, setting control penalty and measurement parameters,
+solving the LQR problem, and computing the regulator gain.
+
+```python
+from FERePack.OptimControl.LQRSolver import LQRSolver
+from FERePack.OptimControl import StateSpaceDAE2
+
+# Define mesh and parameters
+mesh = ...  # Define your mesh
+Re = 100.0
+
+# Initialize the state-space model
+model = StateSpaceDAE2(mesh, Re=Re, order=(2, 1), dim=2)
+
+# Set boundary conditions
+model.set_boundary(bc_list)
+model.set_boundarycondition(bc_list)
+
+# Set base flow
+model.set_baseflow(ic=base_flow_function)
+
+# Define input and output vectors
+input_vec = ...  # Define your input vector (actuation)
+output_vec = ...  # Define your output vector (measurement)
+
+# Assemble the state-space model
+model.assemble_model(input_vec=input_vec, output_vec=output_vec)
+
+# Initialize the LQR solver with the model
+lqr_solver = LQRSolver(model, method='nm', backend='python')
+
+# Set control penalty parameters
+lqr_solver.control_penalty(alpha=1.0)
+
+# Set measurement parameters
+measurement_matrix = ...  # Define your measurement matrix
+lqr_solver.measurement(C=measurement_matrix, beta=0.1)
+
+# Solve the LQR problem
+lqr_solver.solve()
+
+# Compute the regulator (optimal control) gain
+regulator_gain = lqr_solver.regulator()
+```
+
+Notes
+--------
+
+- The LQRSolver class solves the regulator Riccati equation to compute the optimal state feedback control gain.
+- It supports iterative solving using accumulation methods for large-scale systems.
+- The class can interface with both Python and MATLAB versions of the M.E.S.S. library.
+- Control penalty and measurement parameters can be configured to balance control effort and performance.
+
 """
 
 from ..Deps import *
@@ -20,18 +90,73 @@ from ..Interface.Py2Mat import start_matlab
 
 
 class LQRSolver(GRiccatiDAE2Solver):
+    """
+    Solves the Linear Quadratic Regulator (LQR) problem for index-2 systems, utilizing the M.E.S.S. library to solve generalized Riccati equations.
+
+    The LQR problem involves designing an optimal state feedback controller that minimizes a quadratic cost function,
+    balancing control effort against state regulation performance. This class extends the `GRiccatiDAE2Solver` to
+    handle the regulator Riccati equation and compute the optimal control gain.
+
+    Parameters
+    ----------
+    model : dict or StateSpaceDAE2
+        State-space model or dictionary containing system matrices.
+    method : str, optional
+        Method used to solve generalized Riccati equations ('nm' or 'radi'). Default is 'nm'.
+    backend : str, optional
+        Backend used to solve generalized Riccati equations ('python' or 'matlab'). Default is 'python'.
+
+    Attributes
+    ----------
+    eqn : dict
+        Dictionary containing system matrices and parameters.
+    param : dict
+        Default parameters for the Riccati solver.
+    facZ : numpy.ndarray or dict
+        Solution factor of the Riccati equation.
+    status : dict
+        Status information from the solver.
+    sys_energy : function
+        Function to compute the squared H2 norm of the system.
+    gain_energy : function
+        Function to compute the contribution of the regulator on the H2 norm.
+
+    Methods
+    -------
+    control_penalty(alpha)
+        Set the magnitude of control penalty in the LQR formulation.
+    measurement(C, beta=None)
+        Set the square root of the response weight matrix for the LQR formulation.
+    regulator()
+        Compute the optimal control gain from the solution of the LQR problem.
+    solve()
+        Solve the LQR problem once and return results.
+    iter_solve(num_iter=1, MatQ=None, pid=None, Kf=None, mode=0)
+        Solve the LQR problem iteratively using accumulation method.
+
+    Notes
+    -----
+    - The class supports both low-rank and full-rank solutions, depending on the method used.
+    - The computed regulator gain can be applied to design controllers for state regulation.
+    - Supports iterative solving for large-scale systems where resources are limited.
+    """
     def __init__(self, model, method='nm', backend='python'):
         """
-        Initialize the LQE solver with a state-space model.
+        Initialize the LQR solver with a state-space model.
 
         Parameters
         ----------
         model : dict or StateSpaceDAE2
             State-space model or dictionary containing system matrices.
         method : str, optional
-            Method used to solve generalized Riccati equations. Default is 'nm'.
+            Method used to solve generalized Riccati equations ('nm' or 'radi'). Default is 'nm'.
         backend : str, optional
-            Backend used to solve generalized Riccati equations. Default is 'python'.
+            Backend used to solve generalized Riccati equations ('python' or 'matlab'). Default is 'python'.
+
+        Notes
+        -----
+        - Initializes default parameters specific to the LQR problem.
+        - Sets up control penalty with default magnitude.
         """
         self._k0 = BernoulliFeedback(model)
         super().__init__(model, method, backend)
@@ -40,9 +165,13 @@ class LQRSolver(GRiccatiDAE2Solver):
 
     def _lqr_default_parameters(self):
         """
-        Set default parameters based on the method and backend.
+        Set default parameters specific to the LQR problem based on the method and backend.
 
-        pending for further optimization
+        Notes
+        -----
+        - Configures the solver type and equation type appropriate for LQR.
+        - For LQR, the solver type is set to 'lqr_solver', and the equation type is 'T' (transposed).
+        - Pending for further optimization of parameters
         """
         backend = self.param['backend']
         self.param['solver_type'] = 'lqr_solver'
@@ -50,22 +179,38 @@ class LQRSolver(GRiccatiDAE2Solver):
             self.param['riccati_solver']['type'] = 1
         elif backend == 'matlab':
             self.param['riccati_solver']['eqn']['type'] = 'T'
+        else:
+            raise ValueError('Backend must be either "python" or "matlab"')
 
     def _feedback_pencil_deprecated(self, U, V, mode):
         """
-        Assemble the feedback pencil.
-        Matrix A can have the form A = Ã + U*V' if U (eqn.U) and V (eqn.V) are provided U and V are dense (n x m3)
-        matrices and should satisfy m3 << n
+        Assemble the feedback pencil for the system.
 
         Parameters
         ----------
-        U : dense (n x m3) matrix
-            for feedback pencil.
-        V : dense (n x m3) matrix
-            for feedback pencil.
-        mode : int, optional
-            Mode of assembling feedback pencil. Default is 0.
+        U : numpy.ndarray
+            Feedback matrix U (n x m3).
+        V : numpy.ndarray
+            Feedback matrix V (n x m3).
+        mode : int
+            Mode of assembling feedback pencil.
+            - If mode = 0, feedback is accumulated directly to the state matrix.
+            - If mode = 1 and backend is 'matlab', feedback is updated to U and V matrices in `self.eqn`.
 
+        Notes
+        -----
+        - It has been deprecated. Use `self._feedback_pencil` inherited from 'GRiccatiDAE2Solver' instead.
+        - Modifies the system matrices based on the feedback provided.
+        - Supports different modes of applying feedback depending on the backend.
+        - Matrix A can have the form A = Ã + U * V^T if U (eqn.U) and V (eqn.V) are provided U and V are dense (n x m3) matrices and should satisfy m3 << n.
+        - In LQE (e.g. sol_type = 'N') problem, V could always be the measurement matrix C, so U can be only added directly.
+        - In LQR (e.g. sol_type = 'T') problem, U could always be the actuation matrix B, so V can be only added directly.
+        - Otherwise, U, V stacked, and dimensions increase
+
+        Raises
+        ------
+        ValueError
+            If an invalid mode or backend is provided.
         """
         V = -V  # negative feedback
         if mode == 0:
@@ -93,6 +238,11 @@ class LQRSolver(GRiccatiDAE2Solver):
     def init_feedback(self):
         """
         Initialize the feedback using Bernoulli feedback.
+
+        Notes
+        -----
+        - Computes an initial stabilizing feedback gain using the Bernoulli equation.
+        - This initial feedback is used to improve convergence of the Riccati solver.
         """
         method = self.param['method']
         backend = self.param['backend']
@@ -106,17 +256,22 @@ class LQRSolver(GRiccatiDAE2Solver):
         """
         Set the magnitude of control penalty in the LQR formulation.
 
-        penalisation of the control signal: R^{-1/2} in the formulation
+        The control penalty affects the weighting of control effort in the cost function.
 
         Parameters
         ----------
-        alpha : int, float, or 1D array
-            Magnitude of control penalty.
+        alpha : float or array-like
+            Magnitude of control penalty. Can be a scalar or an array specifying penalties for each control input.
 
         Raises
         ------
         TypeError
-            If the provided alpha is not a valid type.
+            If the provided `alpha` is of an invalid type.
+
+        Notes
+        -----
+        - A higher control penalty reduces control effort but may result in poorer state regulation.
+        - The control penalty matrix corresponds to `R^{-1/2}` in M.E.S.S..
         """
 
         n = self.eqn['B'].shape[1]
@@ -137,18 +292,26 @@ class LQRSolver(GRiccatiDAE2Solver):
         """
         Set the square root of the response weight matrix for the LQR formulation.
 
+        The measurement affects the weighting of state deviations in the cost function.
+
         Parameters
         ----------
-        C : 1D array or ndarray
-            Measurement/Output matrix that represents the response weight.
-
-        beta : int, float, or 1D array
-            Magnitude of response weight. Default is None.
+        C : numpy.ndarray
+            Measurement (output) matrix that represents the response weight.
+        beta : float or array-like, optional
+            Magnitude of response weight. Can be a scalar or an array specifying weights for each state. Default is None.
 
         Raises
         ------
         ValueError
-            If the shape of Cz does not match the shape of the existing C matrix.
+            If the shape of the provided `C` does not match the shape of the existing `C` matrix.
+        TypeError
+            If the provided `beta` is of an invalid type.
+
+        Notes
+        -----
+        - Increasing the response weight places more emphasis on state regulation in the cost function.
+        - The measurement matrix corresponds to `Q^{-1/2}` in M.E.S.S..
         """
         if C.shape[1] != self.eqn['C'].shape[1]:
             raise ValueError('Invalid shape of output matrix C.')
@@ -171,16 +334,23 @@ class LQRSolver(GRiccatiDAE2Solver):
 
     def regulator(self):
         """
-        Compute the linear quadratic regulator (LQR) from the solution of the LQR problem.
+        Compute the optimal control gain (regulator) from the solution of the LQR problem.
 
-        Kr = R^{-1} * B' * X = R^{-1} * B' * Z * Z'
-
-        K = (Kr * E ) where K is returned by self.iter_solver and M.E.S.S solver
+        The regulator gain is computed as:
+        ```
+        Kr = R^{-1} * B^T * X = R^{-1} * B^T * Z * Z^T
+        K = Kr * E, where K is weighted gain returned by self.iter_solver and M.E.S.S solver
+        ```
 
         Returns
         -------
-        Kr : numpy array
-            Linear Quadratic Regulator matrix.
+        Kr : numpy.ndarray
+            Linear Quadratic Regulator (optimal control) gain matrix.
+
+        Notes
+        -----
+        - The computed gain can be used to design a state feedback controller.
+        - Handles different formulations based on backend and solver options.
         """
         facZ = self._solution_factor()
         if facZ is None:
@@ -196,43 +366,67 @@ class LQRSolver(GRiccatiDAE2Solver):
 
     def solve(self):
         """
-        Solve the LQE problem once and return results.
+        Solve the LQR problem once and return results.
+
+        Returns
+        -------
+        None
+
+        Notes
+        -----
+        - Calls `iter_solve` with `num_iter=1`.
+        - Suitable for systems where the problem can be solved in a single iteration.
         """
 
         return self.iter_solve(num_iter=1)
 
     def iter_solve(self, num_iter=1, MatQ=None, pid=None, Kf=None, mode=0):
         """
-        Solve the LQE problem iteratively using accumulation method.
+        Solve the LQR problem iteratively using accumulation method.
 
         Parameters
         ----------
         num_iter : int, optional
             Number of iterations to perform. Default is 1.
-        MatQ : sparse matrix, optional
-            Factor of the weight matrix used to evaluate the H2 norm. Default is None.
+        MatQ : scipy.sparse matrix, optional
+            Square-root/Cholesky factor of the weight matrix used to evaluate the H2 norm. Default is None.
         pid : int, optional
             Number of processes to use for H2 norm computation. Default is None.
-        Kf : numpy array, optional
-            Linear Kalman Filter matrix. Default is None.
+        Kf : numpy.ndarray, optional
+            Kalman Filter gain matrix (from LQE). Default is None.
         mode : int, optional
-            Method to perform accumulation method. Default is 0 (i.e. direct assemble).
-            if mode = 1 and backend = matlab, utilise M.M.E.S.S. formulation A = Ã + U*V'
+            Method to perform accumulation method. Default is 0 (i.e., direct assemble).
+            If `mode=1` and `backend='matlab'`, utilizes M-M.E.S.S. formulation A = Ã + U*V'.
 
-        Return a dict with following keys:
-        ----------
-        K : numpy array
-            H2 estimator (Kalman Filter).
-        status : list
-            Status of each iteration.
-        size: tuple or list
-            Size of solution factor at each iteration.
-        alloc_mode : list
-            The number of disturbance modes allocated to each iteration.
-        sqnorm_sys : float
-            Square of H2 norm.
-        sqnorm_lqe : numpy array
-            LQR norm, if computed.
+        Returns
+        -------
+        output : dict
+            Dictionary containing results with keys:
+            - 'K': numpy.ndarray, Weighted optimal control gain.
+            - 'status': list, Status of each iteration.
+            - 'size': list, Size of solution factor at each iteration.
+            - 'alloc_mode': list, Number of measurement modes allocated to each iteration.
+            - 'sqnorm_sys': float, Squared H2 norm of the system.
+            - 'sqnorm_lqr': numpy.ndarray, LQR norm, if computed.
+
+        Notes
+        -----
+        - For large-scale systems, iterative solving can help manage computational resources.
+        - Accumulates feedback and performance metrics over iterations.
+        - Uses parallel processing for H2 norm computation when `pid` is specified.
+
+        Examples
+        --------
+        ```python
+        # Solve the LQR problem iteratively
+        results = lqr_solver.iter_solve(num_iter=5, MatQ=MatQ, pid=4)
+
+        # Access the regulator gain
+        regulator_gain = results['K']
+
+        # Access the squared H2 norm
+        h2_norm_squared = results['sqnorm_sys']
+        ```
         """
 
         # get original matrices

@@ -1,13 +1,65 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Thu Sep  5 20:18:46 2024
+This module provides the `ResolventAnalysis` class for performing resolvent analysis on linearized Navier-Stokes systems.
 
-@author: bojin
+The class extends `FrequencySolverBase` and is designed to compute the most amplified modes (singular modes) of the
+system under harmonic forcing at specified frequencies. This analysis is essential for understanding flow
+receptivity, transition to turbulence, and designing flow control strategies.
 
-Resolvent Analysis Module
+Classes
+-------
+- ResolventAnalysis:
+    Performs resolvent analysis of the linearized Navier-Stokes system.
 
-This module provides a class for performing resolvent analysis on the linearized Navier-Stokes system.
+Dependencies
+------------
+- FEniCS
+- NumPy
+- SciPy
+
+Ensure that all dependencies are installed and properly configured.
+
+Examples
+--------
+Typical usage involves creating an instance of `ResolventAnalysis`, setting up the problem domain, boundary conditions, base flow, and solving for the leading singular modes of the resolvent operator.
+
+```python
+from FERePack.FreqAnalys.ResolSolver import ResolventAnalysis
+import numpy as np
+
+# Define mesh and parameters
+mesh = ...  # Define your mesh
+Re = 100.0
+frequency = 1.0  # Frequency in Hz
+omega = 2 * np.pi * frequency  # Angular frequency
+
+# Initialize the resolvent analysis solver
+solver = ResolventAnalysis(mesh, Re=Re, order=(2, 1), dim=2)
+
+# Set boundary conditions
+solver.set_boundary(bc_list)
+solver.set_boundarycondition(bc_list)
+
+# Set base flow
+solver.set_baseflow(ic=base_flow_function)
+
+# Solve for the leading singular modes
+s = 1j * omega
+solver.solve(k=5, s=s)
+
+# Access the computed singular values and modes
+singular_values = solver.energy_amp
+force_modes = solver.force_mode
+response_modes = solver.response_mode
+```
+
+Notes
+--------
+- The ResolventAnalysis class computes the leading singular values and corresponding force and response modes of the resolvent operator.
+- The resolvent operator is defined as the transfer function from forcing to response in the linearized Navier-Stokes system.
+- Supports restriction of the analysis to specific spatial regions (subdomains) via the bound parameter.
+
 """
 
 from ..Deps import *
@@ -20,7 +72,47 @@ from ..LinAlg.Utils import assign2
 
 class ResolventAnalysis(FreqencySolverBase):
     """
-    Perform resolvent analysis of the linearized Navier-Stokes system.
+    Performs resolvent analysis of the linearized Navier-Stokes system.
+
+    This class extends `FrequencySolverBase` and is used to compute the most amplified modes of the system under
+    harmonic forcing at specified frequencies. It calculates the singular values and corresponding singular modes (
+    force and response modes) of the resolvent operator, which characterizes how input disturbances are amplified by
+    the flow dynamics.
+
+    Parameters
+    ----------
+    mesh : dolfin.Mesh
+        The computational mesh of the flow domain.
+    Re : float, optional
+        The Reynolds number of the flow. Default is None.
+    order : tuple of int, optional
+        The polynomial orders of the finite element spaces for velocity and pressure, respectively. Default is (2, 1).
+    dim : int, optional
+        Dimension of the flow field. Default is 2.
+    constrained_domain : dolfin.SubDomain, optional
+        A constrained domain for applying periodic boundary conditions or other constraints. Default is None.
+
+    Attributes
+    ----------
+    energy_amp : numpy.ndarray
+        The singular values (energy amplification) of the resolvent operator.
+    force_mode : numpy.ndarray
+        The force modes (left singular vectors) of the resolvent operator.
+    response_mode : numpy.ndarray
+        The response modes (right singular vectors) of the resolvent operator.
+
+    Methods
+    -------
+    solve(k, s, Re=None, Mat=None, bound=[None, None], sz=None, reuse=False)
+        Solve for the leading singular values and modes of the resolvent operator.
+    save(k, s, path)
+        Save the k-th singular mode as a time series to a specified path.
+
+    Notes
+    -----
+    - The resolvent operator maps forcing to response in the frequency domain.
+    - Singular value decomposition (SVD) is used to find the most amplified modes.
+    - The analysis can be restricted to specific subdomains for both forcing and response.
     """
 
     def __init__(self, mesh, Re=None, order=(2, 1), dim=2, constrained_domain=None):
@@ -29,16 +121,16 @@ class ResolventAnalysis(FreqencySolverBase):
 
         Parameters
         ----------
-        mesh : Mesh
-            Mesh of the flow field.
+        mesh : dolfin.Mesh
+            The computational mesh of the flow domain.
         Re : float, optional
-            Reynolds number. Default is None.
-        order : tuple, optional
-            Order of finite elements. Default is (2, 1).
+            The Reynolds number of the flow. Default is None.
+        order : tuple of int, optional
+            The polynomial orders of the finite element spaces for velocity and pressure, respectively. Default is (2, 1).
         dim : int, optional
             Dimension of the flow field. Default is 2.
-        constrained_domain : SubDomain, optional
-            Constrained domain defined in FEniCS (e.g., periodic boundary conditions). Default is None.
+        constrained_domain : dolfin.SubDomain, optional
+            A constrained domain for applying periodic boundary conditions or other constraints. Default is None.
         """
 
         super().__init__(mesh, Re, order, dim, constrained_domain)
@@ -46,12 +138,19 @@ class ResolventAnalysis(FreqencySolverBase):
 
     def _initialize_solver(self, bound=None):
         """
-        Initialize the Inverse Matrix Operator and LU solver.
+        Initialize the inverse matrix operators and LU solvers for the resolvent analysis.
+
+        This method sets up the necessary operators for computing the resolvent operator and its singular value decomposition.
 
         Parameters
         ----------
         bound : str or None, optional
-            Restricted subdomain definition for input/force. Default is None.
+            Specifies the subdomain restriction for the input (forcing). Default is None.
+
+        Notes
+        -----
+        - Constructs the inverse of the linearized Navier-Stokes operator.
+        - Constructs the input energy matrix `Qf` and its inverse.
         """
         param = self.param[self.param['solver_type']]
         Mat = self.param['feedback_pencil']
@@ -82,20 +181,25 @@ class ResolventAnalysis(FreqencySolverBase):
 
     def _initialize_expr(self, bound=None):
         """
-        Initialize the expression for the resolvent analysis.
-        
+        Initialize the operator expression for the resolvent analysis:
         u = P^T * L^-1 * P * M * f
         D = u^H * Qu * u
           = (M^T * P^T) * L^-H * (P * Qu * P^T) * L^-1 * (P * M)
-          
+
          if bound on forcing, f = Df * f_s, Qf = Df^T * Qf * Df
          if bound on velocity, u_s = Du^T * u, Qu = Du^T * Qf * Du
 
-         Parameters
-        ----------
-        bound : str
-            Restrict subdomain definition for the response.
+        This method constructs the composite operator whose singular values and vectors are to be computed.
 
+        Parameters
+        ----------
+        bound : str or None, optional
+            Specifies the subdomain restriction for the response. Default is None.
+
+        Notes
+        -----
+        - Constructs operators for both forcing and response restrictions.
+        - The operator expression represents the resolvent operator in terms of available matrices.
         """
         P = MatP(self.element)  # Prolongation matrix for the entire space of size nxk
         M = MatM(self.element, bcs=self.boundary_condition.bc_list)  # Weight matrix with bcs for forcing of size k x k
@@ -116,20 +220,25 @@ class ResolventAnalysis(FreqencySolverBase):
 
     def _format_solution(self, s, vals, vecs):
         """
-        Process the solution and normalize the eigenvectors.
+        Process and normalize the solution obtained from the SVD.
 
         Parameters
         ----------
         s : complex
-            The Laplace variable.
-        vals : numpy array
-            Eigenvalues of the resolvent operator.
-        vecs : numpy array
-            Eigenvectors of the resolvent operator.
+            The Laplace variable (frequency).
+        vals : numpy.ndarray
+            Singular values obtained from the SVD.
+        vecs : numpy.ndarray
+            Singular vectors (force modes) obtained from the SVD.
+
+        Notes
+        -----
+        - Sorts the singular values and vectors in descending order.
+        - Normalizes the response modes based on the energy amplification.
         """
         imag_max = np.max(np.abs(np.imag(vals / np.real(vals))))
         if imag_max > 1e-9:
-            info('Large imaginary part at s = {s} with max. imag. part (relative) = {imag_max}')
+            info(f'Large imaginary part at s = {s} with max. imag. part (relative) = {imag_max}')
 
         # Sort eigenvalues and corresponding eigenvectors in descending order
         vals = np.real(vals)
@@ -155,24 +264,35 @@ class ResolventAnalysis(FreqencySolverBase):
 
     def solve(self, k, s, Re=None, Mat=None, bound=[None, None], sz=None, reuse=False):
         """
-        Solve the resolvent problem.
+        Solve for the leading singular values and modes of the resolvent operator.
 
         Parameters
         ----------
         k : int
-            Number of eigenvalues to compute.
+            Number of singular values and modes to compute.
         s : complex
-            The Laplace variable.
+            The Laplace variable `s`, typically `s = sigma + i*omega`, where `omega` is the angular frequency.
         Re : float, optional
-            Reynolds number. Default is None.
-        Mat : scipy.sparse matrix or dict with real matrices U, V, optional
-            Feedback matrix Mat = U * V'. Default is None.
+            Reynolds number. If provided, updates the Reynolds number before solving. Default is None.
+        Mat : scipy.sparse matrix or dict with keys 'U' and 'V', optional
+            Feedback matrix `Mat = U * V.T`. Can be provided as a sparse matrix or a dictionary containing 'U' and 'V'. Default is None.
         bound : list or tuple, optional
             Subdomain restrictions for the response and input, respectively. Default is [None, None].
+            - `bound[0]`: Subdomain for response restriction.
+            - `bound[1]`: Subdomain for input (forcing) restriction.
         sz : complex or tuple/list of complex, optional
             Spatial frequency parameters for quasi-analysis of the flow field. Default is None.
         reuse : bool, optional
-            Whether to reuse previous computations. Default is False.
+            If True, reuses previous computations (e.g., LU factorization) if available. Default is False.
+
+        Returns
+        -------
+        None
+
+        Notes
+        -----
+        - The method assembles the system matrices and initializes the solver if `reuse` is False.
+        - After solving, the computed singular values and modes are stored in `self.energy_amp`, `self.force_mode`, and `self.response_mode`.
         """
 
         param = self.param[self.param['solver_type']]
@@ -205,19 +325,25 @@ class ResolventAnalysis(FreqencySolverBase):
 
     def save(self, k, s, path):
         """
-        Save the k-th singular mode as a time series.
-        
-        time 0 is the real part of the force, time 1 is the imag part of the force,
-        time 2 is the real part of the response, time 3 is the imag part of the response
+        Save the k-th singular mode (force and response) as a time series to a specified path.
 
         Parameters
         ----------
         k : int
-            Index of the mode to save.
+            Index of the mode to save (0-based indexing).
         s : complex
-            The Laplace variable.
+            The Laplace variable `s`, typically `s = sigma + i*omega`, where `omega` is the angular frequency.
         path : str
-            Directory path of the folder to save the mode.
+            Directory path where the mode will be saved.
+
+        Notes
+        -----
+        - The saved time series contains the real and imaginary parts of the force and response modes.
+        - The modes are stored at time steps:
+            - Time 0.0: Real part of the force mode.
+            - Time 1.0: Imaginary part of the force mode.
+            - Time 2.0: Real part of the response mode.
+            - Time 3.0: Imaginary part of the response mode.
         """
 
         force = self.force_mode[:, k]

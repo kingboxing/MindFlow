@@ -1,34 +1,43 @@
 from setuptools import setup, find_packages
+from pathlib import Path
+# Read the long description from the README file
+this_directory = Path(__file__).parent.resolve()
+long_description = (this_directory / "README.md").read_text(encoding='utf-8')
+
 
 setup(
-    name='ferepack',  # This is the custom name for the package
-    version='0.1',
-    packages=find_packages(),  # This will find all subpackages under src/
-    package_dir={'': 'src'},  # Define 'src' as the root directory for modules
-    include_package_data=True,
-    install_requires=[
-        'python>=3.9.0'
-        'FEniCS==2019.1.0',
-        'scipy',
-        'numpy',
-        'matplotlib',
-        'scikit-sparse',
-        'scikit-umfpack',
-        'pymess',
-        'matlab.engine'
-        'psutil',
-        'time',
-        'joblib',
-        'copy',
-        'multiprocessing',
-        'petsc4py',
-        'gc',
-        'os',
-        'sys',
-        # List your dependencies here (e.g., fenics, numpy)
-    ],
-    description='FERePack: FEniCS-based package for frequency-based analysis and control problems.',
+    name='ferepack',
+    version='0.1.0',
+    description='A FEniCS-based package for frequency-domain analysis and optimal control of fluid dynamics.',
+    keywords='fenics, fluid dynamics, frequency analysis, optimal control',
+    long_description=long_description,
+    long_description_content_type='text/markdown',  # Specify the format of the long description
     author='Bo Jin',
     author_email='jinbo199188@gmail.com',
-    url='xxxxx',  # Your repository URL
+    url='https://kingboxing@bitbucket.org/kingboxing/ferepack.git',  # Optional
+    packages=find_packages(where='src'),
+    package_dir={'': 'src'},
+    install_requires=[
+        'scipy==1.8.0',
+        'numpy==1.24.0',
+        'matplotlib==3.5.1',
+        'scikit-sparse==0.4.15',
+        'scikit-umfpack==0.3.3',
+        'pymess',
+        'petsc4py',
+        'psutil',
+        'joblib',
+        'h5py',
+    ],
+    classifiers=[
+        'Development Status :: 3 - Alpha',  # Project maturity
+        'Intended Audience :: Developers',
+        'Intended Audience :: Science/Research',
+        'Topic :: Scientific/Engineering',
+        'Programming Language :: Python :: 3',
+        'Programming Language :: Python :: 3.9',
+        'License :: OSI Approved :: GNU Lesser General Public License v2 (LGPLv2)',
+        'Operating System :: OS Independent',
+    ],
+    python_requires='>=3.9',  # Define minimum Python version
 )

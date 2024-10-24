@@ -1,13 +1,43 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Mon Sep  9 17:46:44 2024
+This module provides the `VectorGenerator` class, which offers methods for generating common input and output vectors
+used in finite element simulations and frequency response analysis. It includes functionalities for assembling vectors
+and matrices from variational forms, applying boundary conditions, and creating vectors representing various physical
+phenomena such as Gaussian distributions, point sources, oscillating motions, and rotational movements.
 
-@author: bojin
+Classes
+-------
+- VectorGenerator:
+    A factory class to generate common input and output vectors for finite element solvers, particularly useful for
+    frequency response analyses.
 
-VectorAsm Module
+Dependencies
+------------
+- NumPy
+- SciPy
+- FEniCS (dolfin)
+- Modules from the FERePack package:
+    - Deps
+    - Eqns.NavierStokes
+    - LinAlg.MatrixOps
+    - LinAlg.Utils
 
-This module provides classes for generating common input/output vectors for these solvers.
+Examples
+--------
+Typical usage involves creating an instance of `VectorGenerator` with a finite element object and, optionally, a boundary condition object. The methods of this class can then be used to generate vectors required for simulations.
+
+```python
+from FERePack.LinAlg.VectorAsm import VectorGenerator
+
+# Assume `element` is a finite element object and `bc_obj` is a boundary condition object
+vector_gen = VectorGenerator(element, bc_obj)
+
+# Generate a Gaussian vector
+gaussian_vec = vector_gen.gaussian_vector(center=(0.5, 0.5), sigma=0.1, scale=1.0)
+
+# Generate a unit vector at a specific coordinate
+unit_vec, coord_closest = vector_gen.unit_vector(coord=(0.5, 0.5), index=0)
 """
 
 from ..Deps import *
@@ -20,7 +50,71 @@ from ..LinAlg.Utils import allclose_spmat, get_subspace_info, find_subspace_inde
 #%%
 class VectorGenerator:
     """
-    A factory class to generate common input and output vectors for the FrequencyResponse class.
+    A factory class to generate common input and output vectors for finite element solvers,
+    particularly useful for frequency response analysis.
+
+    This class provides methods to:
+        - Assemble expressions into vectors and matrices.
+        - Apply boundary conditions to vectors.
+        - Generate vectors with Gaussian distributions.
+        - Apply point sources at specified coordinates.
+        - Generate unit vectors at specified coordinates.
+        - Generate random vectors with specified distributions.
+        - Create vectors for physical phenomena like oscillating accelerations, velocities, displacements, and rotational motions.
+
+    Parameters
+    ----------
+    element : Finite Element
+        The finite element object defining the solution space.
+    bc_obj : SetBoundaryCondition, optional
+        Boundary condition object of type `SetBoundaryCondition`. Default is None.
+
+    Attributes
+    ----------
+    element : Finite Element
+        The finite element object defining the solution space.
+    boundary_condition : SetBoundaryCondition
+        Boundary condition object of type `SetBoundaryCondition`
+    bc_list : list
+        List of boundary conditions.
+    Mat_wgt : scipy.sparse.csr_matrix
+        Variational weight matrix assembled from the finite element formulation.
+
+    Methods
+    -------
+    set_boundarycondition(vec)
+        Apply boundary conditions to a RHS vector.
+    variational_weight(vec)
+        Multiply a vector by the variational weight matrix.
+    gaussian_vector(center, sigma, scale=1.0, index=0, limit=None)
+        Generate a vector with a Gaussian distribution.
+    point_vector(coord, index, scale=1.0)
+        Apply a point source at specified coordinates to a subspace of a mixed element.
+    unit_vector(coord, index, scale=1.0)
+        Generate a unit vector with a '1' at the closest coordinate and subspace.
+    random_vector(distribution='uniform', seed=None)
+        Generate a random vector using a specified distribution.
+    force_vector(mark=None, dirc=None, comp=None, Re=None, reuse=True)
+        Evaluate the force on the body (lift or drag).
+    unit_oscaccel_vector(dirc, s)
+        Generate a vector for fluid oscillating acceleration.
+    unit_oscvel_vector(dirc, s)
+        Generate a vector for fluid oscillating velocity.
+    unit_oscdisp_vector(dirc, s)
+        Generate a vector for fluid oscillating displacement.
+    unit_rotvel_vector(mark, s=None, radius=1.0, center=(0.0, 0.0))
+        Generate a vector for rotating velocity of a 2D cylinder.
+    unit_rotaccel_vector(mark, s, radius=1.0, center=(0.0, 0.0))
+        Generate a vector for rotating acceleration of a 2D cylinder.
+    unit_rotangle_vector(mark, s, radius=1.0, center=(0.0, 0.0))
+        Generate a vector for rotating angle of a 2D cylinder.
+
+    Notes
+    -----
+    - This class is particularly useful in simulations where specific input vectors are required,
+      such as applying forces, boundary conditions, or initial conditions.
+    - The methods provided can generate vectors for various physical scenarios, making it easier
+      to set up simulations with complex input requirements.
     """
 
     def __init__(self, element, bc_obj=None):
@@ -29,10 +123,10 @@ class VectorGenerator:
 
         Parameters
         ----------
-        element : object
+        element : Finite Element
             The finite element object defining the solution space.
         bc_obj : SetBoundaryCondition, optional
-            Boundary condition object. Default is None.
+            Boundary condition object of type `SetBoundaryCondition`. Default is None.
         """
 
         self.element = element  #.new()
@@ -47,17 +141,17 @@ class VectorGenerator:
 
         Parameters
         ----------
-        expr : expression or function
+        expr : UFL expression or function
             The expression or function to assemble.
-        test_func : function
-            Test function from variational formula.
+        test_func : Function
+            Test function from variational formulation.
         bc_list : list, optional
-            Boundary conditions. Default is [].
+            List of boundary conditions. Default is [].
 
         Returns
         -------
-        numpy array
-            Assembled vector as a numpy array.
+        numpy.ndarray
+            Assembled vector as a NumPy array.
         """
 
         var_form = dot(expr, test_func) * dx
@@ -200,7 +294,7 @@ class VectorGenerator:
         index : int, optional
             Scalar subspace index. Default is 0.
         limit : float, optional
-            When the distance from the center exceeds Limit * sigma, the value is set to 0. Default is None.
+            Limit for setting values to zero when the distance from the center exceeds `limit * sigma`. Default is None.
 
         Returns
         -------
@@ -291,14 +385,15 @@ class VectorGenerator:
         index : int
             index of the scalar subspace
         scale : float, optional
-            The value to apply at the specified point (default is 1.0).
+            The value to apply at the closest point (default is 1.0).
 
         Returns
         -------
-        vector : numpy array
-            A unit vector of the specified length.
-        coord_cloest : tuple
-            The vertex coordinate that the value is applied (not exactly equals to the given coordinate).
+        tuple
+            - vector : numpy.ndarray
+                A unit vector of the specified length.
+            - coord_closest : tuple
+                The vertex coordinate where the value is applied (not exactly equals to the specified coordinate).
         """
         # get subspace info
         sub_spaces = get_subspace_info(self.element.functionspace)
@@ -368,8 +463,8 @@ class VectorGenerator:
 
         Returns
         -------
-        Expression
-            The force expression.
+        tuple of expression
+            Force expressions for each direction and component.
             1st index for direction, 2nd index for component
 
         """
@@ -394,14 +489,13 @@ class VectorGenerator:
         mark : int
             the boundary mark of the body. The default is None.
         dirc : int
-            0 means X direction and 1 means Y direction. The default is None.
+            Direction index (0 for X, 1 for Y). The default is None.
         comp : None or int
-            0 means pressure part, 1 means stress part, None means the summation
-            The default is None.
+            Component index (0 for pressure, 1 for stress). If None, sum both components. The default is None.
         Re : None or float
             Reynolds number. The default is None.
         reuse : bool
-            if re-assemble the force expression. The default is False.
+            If True, reuse the assembled force expressions. Default is True.
 
         Returns
         -------
@@ -431,7 +525,7 @@ class VectorGenerator:
         Parameters
         ----------
         dirc : int
-            direction of fluid's oscillation. index of scalar subspace
+            Direction of fluid's oscillation (scalar subspace index).
         s : int, float, complex
             The Laplace variable s, also known as the operator variable in the Laplace domain.
 
@@ -468,7 +562,7 @@ class VectorGenerator:
         Parameters
         ----------
         dirc : int
-            direction of fluid's oscillation.
+            Direction of fluid's oscillation (scalar subspace index).
         s : int, float, complex
             The Laplace variable s, also known as the operator variable in the Laplace domain.
 
@@ -504,7 +598,7 @@ class VectorGenerator:
         Parameters
         ----------
         dirc : int
-            direction of fluid's oscillation.
+            Direction of fluid's oscillation (scalar subspace index).
         s : int, float, complex
             The Laplace variable s, also known as the operator variable in the Laplace domain.
 
@@ -541,10 +635,11 @@ class VectorGenerator:
             the boundary mark of the body. 
         s : int, float, complex, optional
             The Laplace variable s, also known as the operator variable in the Laplace domain. Default is None.
-        radius : TYPE, optional
-            DESCRIPTION. The default is 1.0.
-        center : TYPE, optional
-            DESCRIPTION. The default is (0.0, 0.0).
+        radius : float, optional
+            Radius of the cylinder. Default is 1.0.
+        center : tuple, optional
+            Center of the cylinder. Default is (0.0, 0.0).
+
         Returns
         -------
         vec : numpy array
@@ -580,9 +675,10 @@ class VectorGenerator:
         s : int, float, complex, optional
             The Laplace variable s, also known as the operator variable in the Laplace domain.
         radius : float, optional
-            Radius of the cylinder. The default is 1.0.
-        center : TYPE, optional
-            Center of the cylinder. The default is (0.0, 0.0).
+            Radius of the cylinder. Default is 1.0.
+        center : tuple, optional
+            Center of the cylinder. Default is (0.0, 0.0).
+
         Returns
         -------
         numpy array
@@ -627,9 +723,9 @@ class VectorGenerator:
         s : int, float, complex, optional
             The Laplace variable s, also known as the operator variable in the Laplace domain.
         radius : float, optional
-            Radius of the cylinder. The default is 1.0.
-        center : TYPE, optional
-            Center of the cylinder. The default is (0.0, 0.0).
+            Radius of the cylinder. Default is 1.0.
+        center : tuple, optional
+            Center of the cylinder. Default is (0.0, 0.0).
             
         Returns
         -------

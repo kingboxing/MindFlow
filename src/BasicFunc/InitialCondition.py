@@ -1,29 +1,82 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Sat Feb  3 15:48:02 2024
+This module provides a class for setting initial conditions for simulations,
+including support for adding noise and handling parallel execution for IPCS solvers.
 
-@author: bojin
+Classes
+-------
+- SetInitialCondition: Class to set initial conditions for simulations.
+
+Examples
+--------
+To set an initial condition for a transient simulation:
+
+    ic = SetInitialCondition(flag=1, ic='path/to/timeseries', fw=solution_function, noise=0.01)
+
+
 """
 from ..Deps import *
 
 
 class SetInitialCondition:
     """
-    Set initial conditions for FEniCS simulations, with optional noise and support for parallel execution.
+    Class to set initial conditions for FEniCS simulations, with optional noise addition
+    and support for parallel execution (e.g., in IPCS solvers).
+
+    Parameters
+    ----------
+    flag : int
+        Determines the type of solver:
+        - 0: Steady Newton solver.
+        - 1: Transient Newton solver.
+        - 2: Transient IPCS solver (supports MPI).
+    ic : str or Function, optional
+        Initial condition, either as a file path (string) or a FEniCS Function. Default is None.
+    fw : Function or list of Functions, optional
+        The function(s) to which the initial condition is applied. Default is None.
+    noise : bool, float, or ndarray, optional
+        Noise to be added to the initial condition:
+        - False or None: No noise added.
+        - True or float: Random noise scaled by the float value.
+        - ndarray: Custom noise array to be added.
+        Default is False (no noise).
+    timestamp : float, optional
+        Timestamp for retrieving the initial condition from a time series or HDF5 file. Default is 0.0.
+    mesh : Mesh, optional
+        The mesh associated with the simulation. Required for parallel solvers. Default is None.
+    element_in : object, optional
+        The input element object (e.g., instance of a finite element class like TaylorHood). Default is None.
+    element_out : object, optional
+        The output element object (e.g., instance of a finite element class like TaylorHood). Default is None.
+
+    Attributes
+    ----------
+    None
+
+    Methods
+    -------
+    visit_hdf5(path)
+        Visit and list all attributes in an HDF5 file.
+
+    Notes
+    -----
+    This class handles the setting of initial conditions depending on the solver type,
+    supports adding noise to the initial condition, and handles parallel execution
+    for IPCS solvers.
     """
 
     def __init__(self, flag, ic=None, fw=None, noise=False, timestamp=0.0, mesh=None, element_in=None,
                  element_out=None):
         """
-        Initialize the initial condition setup.
+        Initialize the initial condition setup and apply the initial condition to the provided function(s).
 
         Parameters
         ----------
         flag : int
             Determines the type of solver (0: steady, 1: transient, 2: IPCS solver).
         ic : str or Function, optional
-            Initial condition, either as a file path or a FEniCS function. Default is None.
+            Initial condition, either as a file path or a FEniCS Function. Default is None.
         fw : Function or list of Functions, optional
             The function(s) to which the initial condition is applied. Default is None.
         noise : bool, float, or ndarray, optional
@@ -33,9 +86,13 @@ class SetInitialCondition:
         mesh : Mesh, optional
             The mesh associated with the simulation. Required for parallel solvers. Default is None.
         element_in : object, optional
-            The input element object (e.g., TaylorHood). Default is None.
+            The input element object (e.g., instance of a finite element class). Default is None.
         element_out : object, optional
-            The output element object (e.g., TaylorHood). Default is None.
+            The output element object (e.g., instance of a finite element class). Default is None.
+
+        Returns
+        -------
+        None
         """
         vec_noise = self._set_noise(noise, element_out) if noise and element_out else None
 
@@ -59,7 +116,7 @@ class SetInitialCondition:
         path : str
             Path to the time series file.
         fw : Function
-            The function to apply the time series to.
+            The function to which the time series data will be applied.
         timestamp : float
             The timestamp to retrieve from the time series.
         """
@@ -70,14 +127,14 @@ class SetInitialCondition:
     #%%
     def _read_hdf5(self, hdf, fw, timestamp, label, mesh):
         """
-        Read an HDF5 file and apply it to the function.
+        Read data from an HDF5 file and apply it to the function.
 
         Parameters
         ----------
         hdf : HDF5File
             The HDF5 file to read from.
         fw : Function
-            The function to apply the HDF5 data to.
+            The function to which the HDF5 data will be applied.
         timestamp : float
             The timestamp to retrieve from the HDF5 file.
         label : str
@@ -103,9 +160,18 @@ class SetInitialCondition:
         ic : str or Function
             Initial condition, either as a file path or a FEniCS function.
         fw : Function
-            The function to apply the initial condition to.
+            The function to which the initial condition will be applied.
         timestamp : float, optional
             Timestamp for retrieving the initial condition from a time series. Default is 0.0.
+
+        Returns
+        -------
+        None
+
+        Raises
+        ------
+        ValueError
+            If the initial condition format is invalid.
         """
         if isinstance(ic, str):
             self._read_timeseries(ic, fw, timestamp)
@@ -124,15 +190,24 @@ class SetInitialCondition:
         ic : str or Function
             Initial condition, either as a file path or a FEniCS function.
         fw : list of Functions
-            The functions to apply the initial condition to.
+            The functions to which the initial condition will be applied (e.g., [u, p]).
         mesh : Mesh
             The mesh associated with the simulation.
         timestamp : float
             Timestamp for retrieving the initial condition. Default is 0.0.
         element_in : object, optional
-            The input element object (e.g., TaylorHood). Default is None.
+            The input element object (e.g., instance of a finite element class). Default is None.
         element_out : object, optional
-            The output element object (e.g., TaylorHood). Default is None.
+            The output element object (e.g., instance of a finite element class). Default is None.
+
+        Returns
+        -------
+        None
+
+        Raises
+        ------
+        ValueError
+            If the initial condition format is invalid or unknown element type.
         """
 
         # set parallel in Decoupled element
@@ -147,15 +222,21 @@ class SetInitialCondition:
                     self._read_hdf5(hdf, element_in.w, timestamp, 'Coupled Field', mesh)
                 elif element_in.type == 'TaylorHood':
                     self._read_timeseries(ic, element_in.w, timestamp)
+                else:
+                    info("Unknown dataset in initial condition file.")
+                    raise ValueError("Unknown dataset in initial condition file.")
                 assign(fw[0], element_in.w.sub(0))
                 assign(fw[1], element_in.w.sub(1))
 
-        elif element_in.type == element_out.type:  # type is 'Decoupled', ic is a tuple
+        elif isinstance(ic, tuple) and element_in.type == element_out.type:  # type is 'Decoupled', ic is a tuple
             self._set_function(ic[0], fw[0])
             self._set_function(ic[1], fw[1])
         elif element_in.type == 'TaylorHood':  # ic is a Function
             self._set_function(ic.sub(0), fw[0])
             self._set_function(ic.sub(1), fw[1])
+        else:
+            info("Invalid initial condition format or unknown element type.")
+            raise ValueError("Invalid initial condition format or unknown element type.")
 
     #%%
     def _set_noise(self, noise, element_out):
@@ -165,14 +246,21 @@ class SetInitialCondition:
         Parameters
         ----------
         noise : bool, float, or ndarray
-            The noise level or array to add.
+            The noise level or array to add:
+            - True or float: Random noise scaled by the float value.
+            - ndarray: Custom noise array to be added.
         element_out : object
-            The output element object (e.g., TaylorHood).
+            The output element object (e.g., instance of a finite element class).
 
         Returns
         -------
         vec_noise : ndarray or tuple of ndarrays
-            The noise vector(s).
+            The noise vector(s) to be added to the function(s).
+
+        Raises
+        ------
+        ValueError
+            If the noise format is invalid or element type is unknown.
         """
 
         vec_noise = None
@@ -184,6 +272,7 @@ class SetInitialCondition:
                 vec_noise = np.ascontiguousarray(noise)
             else:
                 info("Invalid noise format (expected float or ndarray).")
+                raise ValueError("Invalid noise format (expected float or ndarray).")
 
         elif element_out.type == 'Decoupled':
             if noise is True or isinstance(noise, (float, np.floating)):  # if noise is np.random.rand
@@ -191,13 +280,15 @@ class SetInitialCondition:
                 vec_noise = (np.ascontiguousarray(pertub_v),)
                 pertub_q = (2 * np.random.rand(element_out.functionspace_Q.dim()) - 1) * float(noise)
                 vec_noise += (np.ascontiguousarray(pertub_q),)
-            elif all(isinstance(n, np.ndarray) for n in noise):  # if noise is np.ndarray
+            elif isinstance(noise, tuple) and all(isinstance(n, np.ndarray) for n in noise):  # if noise is np.ndarray
                 vec_noise = (np.ascontiguousarray(noise[0]),)
                 vec_noise += (np.ascontiguousarray(noise[1]),)
             else:
                 info("Invalid noise format (expected float or tuple of ndarrays).")
+                raise ValueError("Invalid noise format (expected float or tuple of ndarrays).")
         else:
-            info("Unknown element type in initial noise setting")
+            info("Unknown element type in initial noise setting.")
+            raise ValueError("Unknown element type in initial noise setting.")
         return vec_noise
 
     def visit_hdf5(self, path):
@@ -207,12 +298,21 @@ class SetInitialCondition:
         Parameters
         ----------
         path : str
-            Path to the HDF5 file.
+            Path to the HDF5 file (without the '.h5' extension).
+
+        Returns
+        -------
+        None
+
+        Notes
+        -----
+        This method uses the h5py library to open and traverse the HDF5 file structure,
+        printing the names of all datasets and groups within the file.
         """
 
         import h5py
         with h5py.File(path + '.h5', 'r') as h5file:
-            # List all the datasets in the file    
+            # List all the datasets and groups in the file
             h5file.visit(print)
 
 

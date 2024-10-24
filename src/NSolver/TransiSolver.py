@@ -1,12 +1,60 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Mon Jan  8 20:08:46 2024
+This module provides classes for solving transient (time-dependent) incompressible Navier-Stokes equations using various methods such as the Newton-Raphson method and the Implicit Pressure Correction Scheme (IPCS).
 
-@author: bojin
-"""
+Classes
+-------
+- DNS_Newton:
+    Solver for transient Navier-Stokes equations using the Newton-Raphson method.
+- DNS_IPCS:
+    Solver for transient incompressible Navier-Stokes equations using the Implicit Pressure Correction Scheme (IPCS).
 
-"""This module provides the classes that solve Navier-Stokes equations
+Dependencies
+------------
+- FEniCS
+- NumPy
+- SciPy
+
+Ensure that all dependencies are installed and properly configured.
+
+Examples
+--------
+Typical usage involves creating an instance of `DNS_Newton` or `DNS_IPCS`, setting up the problem domain, boundary conditions, initial conditions, and solving the Navier-Stokes equations over time steps.
+
+```python
+from FERePack.NSolver.TransiSolver import DNS_Newton
+
+# Define mesh and parameters
+mesh = ...
+Re = 100.0
+dt = 0.01
+const_expr = ...
+time_expr = ...
+
+# Initialize the solver
+solver = DNS_Newton(mesh, Re=Re, dt=dt, const_expr=const_expr, time_expr=time_expr, order=(2, 1), dim=2)
+
+# Set boundary conditions
+solver.set_boundary(bc_list)
+solver.set_boundarycondition(bc_list)
+
+# Set initial condition
+solver.initial(ic=initial_condition)
+
+# Time-stepping loop
+for t in time_steps:
+    solver.solve()
+    # Optionally, evaluate vorticity or forces
+    vorticity = solver.eval_vorticity()
+    force = solver.eval_force(mark=boundary_mark, dirc=0)
+```
+
+Notes
+--------
+
+- The DNS_Newton class uses the Newton-Raphson method for time-stepping and is suitable for transient simulations where implicit time integration is desired.
+- The DNS_IPCS class implements the IPCS method, which is a commonly used fractional step method for solving incompressible Navier-Stokes equations.
 """
 
 from ..Deps import *
@@ -20,32 +68,68 @@ from ..BasicFunc.InitialCondition import SetInitialCondition
 
 class DNS_Newton(NewtonSolver):
     """
-    Solver for transient Navier-Stokes equations using the Newton method.
+    Solver for transient incompressible Navier-Stokes equations using the FEniCS build-in Newton method.
+
+    This class extends the `NewtonSolver` class to handle time-dependent problems using implicit time integration schemes.
+
+    Parameters
+    ----------
+    mesh : dolfin.Mesh
+        The computational mesh.
+    Re : float, optional
+        The Reynolds number. Default is None.
+    dt : float, optional
+        Time step size. Default is None.
+    const_expr : dolfin.Expression, dolfin.Function, or dolfin.Constant, optional
+        The time-invariant source term for the flow field. Default is None.
+    order : tuple of int, optional
+        Order of the finite element spaces for velocity and pressure, respectively. Default is (2, 1).
+    dim : int, optional
+        Dimension of the flow field. Default is 2.
+    constrained_domain : dolfin.SubDomain, optional
+        Constrained subdomain for periodic boundary conditions. Default is None.
+
+    Attributes
+    ----------
+    nstep : int
+        The current time step number.
+    Transient : dolfin.Form
+        The transient term in the Navier-Stokes equations.
+
+    Methods
+    -------
+    initial(ic=None, noise=False, timestamp=0.0)
+        Set the initial condition for the simulation.
+    solve(dt=None, Re=None, time_expr=None)
+        Solve the transient Navier-Stokes equations using the Newton method.
+
+    Notes
+    -----
+    - The solver uses backward Euler time integration by default.
+    - Suitable for simulations where high accuracy in time is required.
     """
 
-    def __init__(self, mesh, Re=None, dt=None, const_expr=None, time_expr=None, order=(2, 1), dim=2,
+    def __init__(self, mesh, Re=None, dt=None, const_expr=None, order=(2, 1), dim=2,
                  constrained_domain=None):
         """
         Initialize the DNS_Newton solver.
 
         Parameters
         ----------
-        mesh : Mesh
+        mesh : dolfin.Mesh
             The computational mesh.
         Re : float, optional
             The Reynolds number. Default is None.
         dt : float, optional
             Time step size. Default is None.
-        const_expr : Expression, Function or Constant, optional
+        const_expr : dolfin.Expression, dolfin.Function, or dolfin.Constant, optional
             The time-invariant source term for the flow field. Default is None.
-        time_expr : Expression, Function or Constant, optional
-            Time-dependent source term for the flow field. Default is None.
-        order : tuple, optional
-            Order of finite element method. Default is (2, 1).
+        order : tuple of int, optional
+            Order of the finite element spaces for velocity and pressure, respectively. Default is (2, 1).
         dim : int, optional
-            Dimension of the problem (2D or 3D). Default is 2.
-        constrained_domain : SubDomain, optional
-            Constrained domain (e.g., for periodic boundary conditions). Default is None.
+            Dimension of the flow field. Default is 2.
+        constrained_domain : dolfin.SubDomain, optional
+            Constrained subdomain for periodic boundary conditions. Default is None.
         """
         super().__init__(mesh, Re, const_expr, order, dim, constrained_domain)
         self.nstep = 0
@@ -59,10 +143,10 @@ class DNS_Newton(NewtonSolver):
 
         Parameters
         ----------
-        ic : str or Function, optional
+        ic : str or dolfin.Function, optional
             Initial condition as a file path or FEniCS function. Default is None.
         noise : bool, optional
-            Add noise to the initial condition. Default is False.
+            If True, add noise to the initial condition. Default is False.
         timestamp : float, optional
             Timestamp for retrieving the initial condition from a time series. Default is 0.0.
         """
@@ -76,11 +160,16 @@ class DNS_Newton(NewtonSolver):
         Parameters
         ----------
         dt : float, optional
-            Time step size. Default is None.
+            Time step size. If provided, updates the time step size before solving. Default is None.
         Re : float, optional
-            The Reynolds number. Default is None.
-        time_expr : Expression, Function or Constant, optional
-            Time-dependent source term for the flow field. Default is None.
+            The Reynolds number. If provided, updates the Reynolds number before solving. Default is None.
+        time_expr : dolfin.Expression, dolfin.Function, or dolfin.Constant, optional
+            Time-dependent source term for the flow field. If provided, updates the source term before solving. Default is None.
+
+        Notes
+        -----
+        - The method checks for changes in parameters and rebuilds the equations if necessary.
+        - At each time step, the solution is stored in `self.eqn.fw[0]`.
         """
         rebuild = False
 
@@ -110,6 +199,61 @@ class DNS_Newton(NewtonSolver):
 class DNS_IPCS(NSolverBase):
     """
     Solver for transient incompressible Navier-Stokes equations using the Implicit Pressure Correction Scheme (IPCS).
+
+    This class implements the IPCS method, a fractional step method, to solve the time-dependent Navier-Stokes equations.
+
+    Parameters
+    ----------
+    mesh : dolfin.Mesh
+        The computational mesh.
+    Re : float
+        The Reynolds number.
+    dt : float
+        Time step size.
+    const_expr : dolfin.Expression, dolfin.Function, or dolfin.Constant, optional
+        The time-invariant source term for the flow field. Default is None.
+    time_expr : dolfin.Expression, dolfin.Function, or dolfin.Constant, optional
+        Time-dependent source term for the flow field. Default is None.
+    order : tuple of int, optional
+        Order of the finite element spaces for velocity and pressure, respectively. Default is (2, 1).
+    dim : int, optional
+        Dimension of the flow field. Default is 2.
+    constrained_domain : list of dolfin.SubDomain, optional
+        Constrained subdomains to apply constraints (e.g., for periodic boundary conditions) for velocity and pressure spaces, respectively.
+        Default is [None, None].
+
+    Attributes
+    ----------
+    nstep : int
+        The current time step number.
+    LHS : list of dolfin.Form
+        Left-hand side forms for each step of the IPCS method.
+    RHS : list of tuple
+        Right-hand side forms for each step of the IPCS method.
+    solver : list
+        Solvers for each step of the IPCS method.
+    has_free_bc : bool
+        Indicates if free boundary conditions are present.
+    bc_reset : bool or int
+        Flag for resetting boundary conditions.
+    FreeBoundary : dict
+        Dictionary to store information for free boundary conditions.
+
+    Methods
+    -------
+    initial(ic=None, noise=False, timestamp=0.0, element_init=None)
+        Set the initial condition for the simulation.
+    set_boundarycondition(bc_list=None, reset=True)
+        Apply boundary conditions to the solver.
+    parameters(param)
+        Update solver parameters.
+    solve(method='lu', lusolver='mumps', inner_iter_max=20, tol=1e-7, relax_factor=1.0, verbose=False)
+        Solve the Navier-Stokes equations using the IPCS method.
+
+    Notes
+    -----
+    - The IPCS method splits the Navier-Stokes equations into a series of steps to solve for velocity and pressure separately.
+    - Suitable for simulations where computational efficiency is important.
     """
 
     def __init__(self, mesh, Re, dt, const_expr=None, time_expr=None, order=(2, 1), dim=2,
@@ -132,11 +276,11 @@ class DNS_IPCS(NSolverBase):
         order : tuple, optional
             Order of finite element method. Default is (2, 1).
         dim : int, optional
-            Dimension of the problem (2D or 3D). Default is 2.
-        constrained_domain : list of SubDomain, optional
-            Constrained domains (e.g., for periodic boundary conditions). Default is [None, None].
+            Dimension of the flow field. Default is 2.
+        constrained_domain : list of dolfin.SubDomain, optional
+            Constrained subdomains to apply constraints (e.g., for periodic boundary conditions) for velocity and pressure spaces, respectively.
+            Default is [None, None].
         """
-
         element = Decoupled(mesh=mesh, order=order, dim=dim,
                             constrained_domain=constrained_domain)  # initialise finite element space
         super().__init__(mesh, element, Re, const_expr, time_expr)
@@ -156,18 +300,22 @@ class DNS_IPCS(NSolverBase):
 
     def initial(self, ic=None, noise=False, timestamp=0.0, element_init=None):
         """
-        Set the initial condition for the IPCS solver.
+        Set the initial condition for the simulation.
 
         Parameters
         ----------
-        ic : str or Function, optional
+        ic : str or dolfin.Function, optional
             Initial condition as a file path or FEniCS function. Default is None.
         noise : bool, optional
-            Add noise to the initial condition. Default is False.
+            If True, add noise to the initial condition. Default is False.
         timestamp : float, optional
             Timestamp for retrieving the initial condition from a time series. Default is 0.0.
         element_init : object, optional
-            Initial element (e.g., TaylorHood). Default is None.
+            Initial element (e.g., Taylor-Hood element). Default is None.
+
+        Notes
+        -----
+        - The method can project an initial condition from a different finite element space if provided.
         """
 
         SetInitialCondition(2, ic=ic, fw=self.eqn.fw[1], noise=noise, timestamp=timestamp, mesh=self.mesh,
@@ -177,14 +325,18 @@ class DNS_IPCS(NSolverBase):
 
     def set_boundarycondition(self, bc_list=None, reset=True):
         """
-        Apply boundary conditions to the IPCS solver.
+        Apply boundary conditions to the solver.
 
         Parameters
         ----------
         bc_list : dict, optional
-            Dictionary of boundary conditions. Default is None.
+            Dictionary of boundary conditions. If None, uses the boundary conditions defined in `self.boundary.bc_list`.
+            Default is None.
         reset : int, optional
-            Reset mode for boundary conditions (0: no reset, 1: reset all, 2: reset values only). Default is 1.
+            Reset mode for boundary conditions:
+            - 0: No reset
+            - 1: Reset all (default)
+            - 2: Reset values only
         """
 
         if bc_list is None:
@@ -202,9 +354,13 @@ class DNS_IPCS(NSolverBase):
         Parameters
         ----------
         bc_dict : dict
-            Dictionary of boundary condition properties.
+            Dictionary containing boundary condition properties.
         mark : int
             Boundary identifier.
+
+        Notes
+        -----
+        - Handles free boundary conditions by setting up appropriate pressure corrections.
         """
 
         # pending for dealing with free boundary/ zero boundary traction condition in bc_list
@@ -226,17 +382,12 @@ class DNS_IPCS(NSolverBase):
 
     def parameters(self, param):
         """
-        Update parameters
+        Update solver parameters.
 
         Parameters
         ----------
-        param : TYPE
-            DESCRIPTION.
-
-        Returns
-        -------
-        None.
-
+        param : dict
+            Dictionary containing parameters to update.
         """
         # update solver parameters
         self.param.update(param)
@@ -244,13 +395,10 @@ class DNS_IPCS(NSolverBase):
     def _apply_matrix_bc(self):
         """
         Apply matrix-based boundary conditions.
-        
-        Identity Matrix that contains only zeros in the rows which have Dirichlet boundary conditions
 
-        Returns
-        -------
-        None.
-
+        Notes
+        -----
+        - Constructs identity matrices with zeros at rows corresponding to Dirichlet boundary conditions.
         """
         self.Mat_vel = self.boundary_condition_V.MatrixBC_rhs()
         self.Mat_pre = self.boundary_condition_Q.MatrixBC_rhs()
@@ -258,20 +406,17 @@ class DNS_IPCS(NSolverBase):
     def _apply_vector_bc(self):
         """
         Apply vector-based boundary conditions.
-        
-        Zero Vector that contains boundary condition values in the rows which have Dirichlet boundary conditions
 
-        Returns
-        -------
-        None.
-
+        Notes
+        -----
+        - Constructs vectors containing boundary condition values at rows corresponding to Dirichlet boundary conditions.
         """
         self.Vec_vel = self.boundary_condition_V.VectorBC_rhs()
         self.Vec_pre = self.boundary_condition_Q.VectorBC_rhs()
 
     def _calculate_normal_vector(self, mark):
         """
-        Calculate the normal vector at a boundary.
+        Calculate the normal vector at a specified boundary.
 
         Parameters
         ----------
@@ -280,8 +425,8 @@ class DNS_IPCS(NSolverBase):
 
         Returns
         -------
-        Function
-            Normal vector function.
+        normal : dolfin.Function
+            Normal vector function defined over the boundary.
         """
         n = self.eqn.n
         ds = self.eqn.ds
@@ -305,7 +450,7 @@ class DNS_IPCS(NSolverBase):
 
     def _initialize_free_boundary(self, mark=None, solver='mumps', func=None, BC_dict=None):
         """
-        Compute pressure on a free boundary based on the velocity field.
+        Initialize/evaluate pressure computations for a free boundary condition based on the velocity field.
 
         Parameters
         ----------
@@ -313,15 +458,20 @@ class DNS_IPCS(NSolverBase):
             Boundary identifier. Default is None.
         solver : str, optional
             Solver type (e.g., 'mumps'). Default is 'mumps'.
-        func : Function, optional
+        func : dolfin.Function, optional
             Velocity function. Default is None.
         BC_dict : dict, optional
             Boundary condition dictionary. Default is None.
 
         Returns
         -------
-        Function or dict
-            Pressure boundary condition function or updated BC dictionary.
+        BC_values : dolfin.Function or dict
+            Pressure boundary condition function or updated boundary condition dictionary.
+
+        Notes
+        -----
+        - If `mark` is provided, initializes the necessary matrices and solvers.
+        - If `BC_dict` is provided, updates the pressure boundary condition values.
         """
 
         if isinstance(mark, (int, np.integer)):
@@ -355,10 +505,10 @@ class DNS_IPCS(NSolverBase):
         """
         Assemble the matrices and vectors for the IPCS solver.
 
-        Returns
-        -------
-        None.
-
+        Notes
+        -----
+        - Assembles the left-hand side (A) and right-hand side (b) for each step of the IPCS method.
+        - Applies boundary conditions to the matrices.
         """
         self.A = tuple(PETScMatrix() for _ in range(3))
         self.b = []
@@ -394,7 +544,7 @@ class DNS_IPCS(NSolverBase):
 
     def _initialize_solver(self, method='lu', lusolver='mumps'):
         """
-        Initialize the solver for the IPCS method.
+        Initialize solvers for each step of the IPCS method.
 
         Parameters
         ----------
@@ -419,17 +569,17 @@ class DNS_IPCS(NSolverBase):
 
     def apply_sourceterm(self, time_expr=None):
         """
-        pending for test if it works
+        Apply a time-dependent source term.
 
         Parameters
         ----------
-        time_expr : Expression, Function or Constant, optional
+        time_expr : dolfin.Expression, dolfin.Function, or dolfin.Constant, optional
             Time-dependent source term for the flow field. Default is None.
 
-        Returns
-        -------
-        None.
-
+        Notes
+        -----
+        - Updates the source term in the right-hand side of the equations.
+        - Pending for test if it works
         """
         if time_expr is not None:
             self.eqn.time_expr = time_expr
@@ -438,6 +588,10 @@ class DNS_IPCS(NSolverBase):
     def _update_solution(self):
         """
         Update the solution after each time step.
+
+        Notes
+        -----
+        - Updates the previous solutions for velocity and pressure for use in the next time step.
         """
         self.eqn.fu[1].assign(self.eqn.fu[0])
         self.eqn.fp[1].assign(self.eqn.fp[0])
@@ -458,11 +612,16 @@ class DNS_IPCS(NSolverBase):
         inner_iter_max : int, optional
             Maximum number of inner iterations. Default is 20.
         tol : float, optional
-            Convergence tolerance. Default is 1e-7.
+            Convergence tolerance for the iterative solver. Default is 1e-7.
         relax_factor : float, optional
             Relaxation factor for updating the solution. Default is 1.0.
         verbose : bool, optional
             If True, print iteration information. Default is False.
+
+        Notes
+        -----
+        - The method performs an iterative procedure to solve the equations at each time step.
+        - Convergence is checked based on the infinity norm of the difference between successive velocity solutions.
         """
 
         if self.nstep == 0 or self.bc_reset:
